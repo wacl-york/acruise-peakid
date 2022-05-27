@@ -161,14 +161,14 @@ for i, df in groups:
     
 
 ### ignore: finding coordinates ###
-raise Exception
-first_name='core_faam_20211004_v005_r1_c258_1hz.nc'
-with Dataset(first_name,'r') as start_fh:
-    lat = start_fh['LAT_GIN'][:]
-    lon = start_fh['LON_GIN'][:]
-    time = num2date(start_fh['Time'][:], units=start_fh['Time'].units, only_use_cftime_datetimes=False)
-
-data = pd.DataFrame({'lon': lon, 'lat': lat}, index=time)
-plume_time = datetime.datetime(2021,10,4,12,52,30)
-print(data.lon[plume_time], data.lat[plume_time])
+#raise Exception
+#first_name='core_faam_20211004_v005_r1_c258_1hz.nc'
+#with Dataset(first_name,'r') as start_fh:
+#    lat = start_fh['LAT_GIN'][:]
+#    lon = start_fh['LON_GIN'][:]
+#    time = num2date(start_fh['Time'][:], units=start_fh['Time'].units, only_use_cftime_datetimes=False)
+#
+#data = pd.DataFrame({'lon': lon, 'lat': lat}, index=time)
+#plume_time = datetime.datetime(2021,10,4,12,52,30)
+#print(data.lon[plume_time], data.lat[plume_time])
     
