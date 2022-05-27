@@ -11,63 +11,35 @@ NANO_SECS_TO_SECS = 1e9
 def datetime_to_seconds(dt):
     return dt.view(int) / NANO_SECS_TO_SECS
 
-def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3, extended_plume_cutoff=2, buffer=5, rolling_period=180, group_difference=2, plume_difference=1, 
-                 background_window=660, bg_subtraction_window=10, group_difference_2=1):
+def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
+                 extended_plume_cutoff=2, buffer=5, rolling_period=180,
+                 group_difference=2, plume_difference=1,
+                 background_window=660, bg_subtraction_window=10,
+                 group_difference_2=1, trapz_dx=1.0):
+                     
+    buffer_time = datetime.timedelta(seconds=buffer)
     df = pd.DataFrame({'conc': concentration}, index=times)
     
-    buffer_time = datetime.timedelta(seconds=buffer)
-    
+    # Want to find times where std <= threshold and conc isn't NAN
     std = df.conc.fillna(method='ffill').rolling(rolling_period, center=True).std().rolling(rolling_period, center=True).mean()
-    std.loc[df.conc.isna()] = np.nan
-    std_low = std.copy()
-    std_low.loc[std_low > std_low_threshold] = np.nan
-    
-    #derive background stats
-    # TODO Does this need to be a DataFrame? Doesn't seem to actually use std_low,
-    # just the times
-    # TODO What is this line doing?
-    # Finds groups that are separated by 2s difference when dropping NAs
-    # And groups by them
-    # Uses this for 2 reasons:
-    #    - Find the times of the longest group
-    #    - Something else...
-    
-    # Need to keep:
-    #   - timestamps
-    #   - seconds
-    #   - group
-    blah = pd.DataFrame({'dt': std_low.dropna().index.values})
-    blah['seconds'] = datetime_to_seconds(blah['dt'])
-    blah['group'] = (blah['seconds'].diff().abs() > group_difference).cumsum()
-    group_counts = blah.groupby('group').group.transform('count')
-    longest_group_times = blah.loc[group_counts.eq(group_counts.max()), "dt"]
-    bg = df.conc.loc[blah['dt']].reindex(df.index).interpolate().rolling(background_window).mean()
-    
-    
-    # TODO original
-    #s = pd.DataFrame(std_low.dropna())
-    #s['i'] = datetime_to_seconds(s.index.values)
-    #groups = s.groupby((s.i.diff().abs() > group_difference).cumsum())
-    
-    #print(f"Found {len(groups)} groups")
-    
-    # Isn't this just extracting the unique datetimes?
-    #group_times = [i[1].index for i in groups]
-    #idx = group_times[0]
-    #for gt in groups.apply(lambda x: x.index):
-    #    idx = idx.union(gt)
-    #bg = df.conc.loc[idx].reindex(df.index).interpolate().rolling(background_window).mean()
+    sd_low_times = std.loc[(~df['conc'].isna()) & (std <= std_low_threshold)].index
+    sd_df = pd.DataFrame({'dt': sd_low_times})
+    sd_df['seconds'] = datetime_to_seconds(sd_df['dt'])
+    sd_df['group'] = (sd_df['seconds'].diff().abs() > group_difference).cumsum()
+    group_counts = sd_df.groupby('group').group.transform('count')
+    longest_group_times = sd_df.loc[group_counts.eq(group_counts.max()), "dt"]
+    bg = df.conc.loc[sd_df['dt']].reindex(df.index).interpolate().rolling(background_window).mean()
     
     bg_mean = df.conc.loc[longest_group_times].mean()
     bg_std = df.conc.loc[longest_group_times].std()
     
-    print(f'Background mean: {bg_mean}')
-    print(f'Background std: {bg_std}')
     #first iteration of plume
-    N_STDS = 3
-    
     foo = df.copy()
-    foo['conc'] = (foo['conc']-bg).rolling(bg_subtraction_window).mean()
+    # TODO finalise what to do with BG, whether to use the CO2 or SO2 version, or
+    # a mix
+    # CO2 subtracts 'bg' here but SO2 doesn't
+    foo['conc'] = (foo['conc'] - bg).rolling(bg_subtraction_window).mean()
+    # SO2 adds bg_mean to rhs of inequality here, CO2 doesnt
     foo['conc'].loc[foo['conc'] < plume_cutoff*bg_std] = np.nan
     foo['seconds'] = datetime_to_seconds(foo.index.values)
     foo['group'] = (foo.dropna().seconds.diff().abs() > group_difference_2).cumsum()
@@ -81,10 +53,9 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3, ex
                end_time = pd.NamedAgg(column="index", aggfunc="max")
            )
     )
-    # Just want start and end times now
     
-    #extend plumes
-    plumes = []
+    # Find timepoints marking limits of plume
+    plume_limits = []
     for i in range(groups.shape[0]):
         # Get the last time before the group start time where the value is less than the BG
         start = (df
@@ -92,37 +63,46 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3, ex
            .tail(1)
            .index
         )[0]
-        plumes.append(df['conc'].loc[(df.index>=start) & (df.index <= groups.iloc[i].loc['end_time'])])
-    
-    #add buffer
-    expanded_plumes = []
-    for plume in plumes:
-        expanded_plumes.append(
-            df.conc.loc[(df.index >= plume.index[0] - buffer_time) & (df.index <= plume.index[-1] + buffer_time)]
-        )
-    
-    #merge plumes with overlapping start and end points
+        this_plume = pd.DataFrame([{
+            "start": start - buffer_time,
+            "end": groups.iloc[i].loc['end_time'] + buffer_time,
+            "plume": i # TODO make plume int
+        }])  
+        plume_limits.append(this_plume)
         
-        
-    # TODO test this and if works remove these comments
-    plume_times = pd.concat(expanded_plumes).index.unique()
-    plumes = df.copy()
-    plumes.loc[~plumes.index.isin(plume_times)] = np.nan
+    plume_limits = pd.concat(plume_limits)
+    # Combine overlapping groups
+    # This is acceptable because these limits are only used to find
+    # all timepoints that are considered during a plume
+    plume_limits["overlapping_group"] = (plume_limits["start"] > plume_limits["end"].shift()).cumsum()
+    plume_limits = plume_limits.groupby("overlapping_group").agg({"start":"min", "end": "max"}).reset_index()
     
-    #index = expanded_plumes[0].index
-    #for plume in expanded_plumes[1:]:
-    #    index = index.union(plume.index)
-    #plumes = df.conc.copy() * np.nan
-    #plumes.loc[unique_times] = df.conc[unique_times]
-    #plumes = pd.DataFrame(plumes)
+    # These 2 joins + subset are simply finding all timepoints from main df that fit into 
+    # one of these groups
+    # TODO how to speed up this operation?
+    # Old for loop seemed to be quicker...
+    plume_times = pd.merge_asof(
+        df,
+        plume_limits,
+        left_index=True,
+        right_on="start",
+        direction="backward",
+        allow_exact_matches=True
+    )
+    plume_times = pd.merge_asof(
+        plume_times,
+        plume_limits,
+        left_index=True,
+        right_on="end",
+        direction="forward",
+        allow_exact_matches=True
+    )
+    plume_times = plume_times.loc[plume_times["overlapping_group_x"] == plume_times["overlapping_group_y"]]
     
-    # TODO warning
-    #plumes['i'] = plumes.index.astype(int) / NANO_SECS_TO_SECS
-    plumes['seconds'] = datetime_to_seconds(plumes.index.values)
-    groups = plumes.groupby((plumes.dropna().seconds.diff().abs() > plume_difference).cumsum())
+    # Find plume groups (How does these differ from above?!)
+    plume_times['seconds'] = datetime_to_seconds(plume_times.index)
+    groups = plume_times.groupby((plume_times.seconds.diff().abs() > plume_difference).cumsum())
     
-    # TODO This is a big plot!
-    # This is probably the final plot
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter('%H:%M')
     ax.xaxis.set_major_formatter(myFmt)
@@ -132,14 +112,18 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3, ex
     ax.plot(df.conc, color='gray', alpha=.5)
     for group in groups:
         ax.plot(group[1].conc)
+    areas = []
     for i, dff in groups:
-        bg_removed = df.conc - bg[df.index]
-        print(f'plume {int(i)+1}: {dff.index[0]} - {dff.index[-1]} -> {np.trapz(bg_removed, dx=0.1)}')    
-    print(bg_removed)
+        bg_removed = dff.conc - bg[dff.index]
+        this_df = pd.DataFrame([{
+            'start': dff.index[0],
+            'end': dff.index[-1],
+            'area': np.trapz(bg_removed, dx=trapz_dx)
+        }])
+        areas.append(this_df)
     plt.show()
     
-    # TODO what to return?
-    return plumes
+    return pd.concat(areas)
     
     # TODO:
     #  - How many of these plots are useful? I.e. how many functions can I refactor

@@ -5,6 +5,7 @@ Created on Tue Mar 15 17:34:49 2022
 @author: Jake
 """
 
+import time
 import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,11 +18,11 @@ columns = ["conc", "a", "b"]
 # Load data
 data = pd.read_csv('C258_FGGA_FAAM.txt', names=columns, parse_dates=True, header=1, date_parser=lambda x:datetime.datetime.strptime(x, '%d/%m/%Y %H:%M:%S.%f'))
 
+t_0 = time.time()
+
 #background
 ROLLING_PERIOD = 180
 
-# TODO Where has this time filter come from? 
-# Guess doesn't matter too much, can just decide to do this early on
 start_time = datetime.datetime(2021,10,4,9,40,0)
 end_time = datetime.datetime(2021,10,4,13,30,0)
 time_filter = (data.index >= start_time) & (data.index <= end_time)
@@ -48,7 +49,6 @@ for gt in groups.apply(lambda x: x.index):
 
 # TODO magic number
 bg = data.conc.loc[idx].reindex(data.index).interpolate().rolling(660).mean()
-
 bg_mean = data.conc.loc[longest_group[1].index].mean()
 bg_std = data.conc.loc[longest_group[1].index].std()
 
@@ -57,7 +57,7 @@ print(f'Background std: {bg_std}')
 #first iteration of plume
 N_STDS = 3
 
-# TODO 10 Magic number
+# TODO 10 Magic number ALSO THIS IS DIFFERENT IN SO2! DON'T SUBTRACT BG THERE!
 conc = (data.conc.loc[time_filter]-bg[time_filter]).rolling(10).mean()
 conc_plume = conc.copy()
 conc_plume[conc_plume < N_STDS*bg_std] = np.nan
@@ -101,6 +101,9 @@ plumes = pd.DataFrame(plumes)
 plumes['i'] = plumes.index.astype(int) / 1e9
 groups = plumes.groupby((plumes.dropna().i.diff().abs() > 1).cumsum())
 
+t_e = time.time()
+print(f"Time taken: {t_e - t_0}s")
+
 # TODO This is a big plot!
 # This is probably the final plot
 fig, ax = plt.subplots()
@@ -112,13 +115,17 @@ plt.xlabel('Time / UTC')
 plt.plot(data.conc.loc[time_filter], color='gray', alpha=.5)
 for group in groups:
     plt.plot(group[1].conc)
+areas = []
 for i, df in groups:
     bg_removed = df.conc - bg[df.index]
     print(f'plume {int(i)+1}: {df.index[0]} - {df.index[-1]} -> {np.trapz(bg_removed, dx=0.1)}')    
+    this_df = pd.DataFrame([{
+        'start': df.index[0],
+        'end': df.index[-1],
+        'area': np.trapz(bg_removed, dx=0.1)
+    }])
+    areas.append(this_df)
 print(bg_removed)
 plt.show()
-
-
-# TODO:
-#  - How many of these plots are useful? I.e. how many functions can I refactor
-#  it into?
+    
+pd.concat(areas).to_csv("plumes_co2.csv")
