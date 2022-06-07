@@ -26,51 +26,41 @@ def detect_peaks(concentration,
     buffer_time = datetime.timedelta(seconds=buffer)
     df = pd.DataFrame({'conc': concentration}, index=times)
     
-    # Want to find times where std <= threshold and conc isn't NAN
-    std = df.conc.fillna(method='ffill').rolling(rolling_period, center=True).std().rolling(rolling_period, center=True).mean()
-    sd_low_times = std.loc[(~df['conc'].isna()) & (std <= std_low_threshold)].index
-    sd_df = pd.DataFrame({'dt': sd_low_times})
-    sd_df['seconds'] = datetime_to_seconds(sd_df['dt'])
-    sd_df['group'] = (sd_df['seconds'].diff().abs() > group_difference).cumsum()
-    # Does it make a difference if use seconds or original time stamp? Main idea is to find subsequent values.
-    # Maybe row-number would be better!
-    group_counts = sd_df.groupby('group').group.transform('count')
-    longest_group_times = sd_df.loc[group_counts.eq(group_counts.max()), "dt"]
-    bg = df.conc.loc[sd_df['dt']].reindex(df.index).interpolate().rolling(background_window).mean()
+    # Define background as when rolling std deviation is below a threshold
+    roll_std = df.conc.fillna(method='ffill').rolling(rolling_period, center=True).std().rolling(rolling_period, center=True).mean()
+    is_bg = (~df['conc'].isna()) & (roll_std <= std_low_threshold)
     
-    bg_mean = df.conc.loc[longest_group_times].mean()
-    bg_std = df.conc.loc[longest_group_times].std()
+    bg = df.conc.iloc[is_bg.values].reindex(df.index).interpolate().rolling(background_window).mean()
+    bg_mean = df.conc.iloc[is_bg.values].mean()
+    bg_std = df.conc.iloc[is_bg.values].std()
     
-    #first iteration of plume
-    foo = df.copy()
-    foo['conc'] = (foo['conc'] - bg).rolling(bg_subtraction_window).mean()
-    foo['conc'].loc[foo['conc'] < plume_cutoff*bg_std] = np.nan
-    
-    foo['seconds'] = datetime_to_seconds(foo.index.values)
-    foo['group'] = (foo.dropna().seconds.diff().abs() > group_difference).cumsum()
-    # Get start and end time by group
-    groups = (
-        foo
-           .reset_index()
-           .groupby('group')
-           .agg(
-               start_time = pd.NamedAgg(column="index", aggfunc="min"),
-               end_time = pd.NamedAgg(column="index", aggfunc="max")
-           )
+    # first iteration of plume detection
+    conc_bg_removed = (df['conc'] - bg).rolling(bg_subtraction_window).mean()
+    is_plume = conc_bg_removed >= plume_cutoff * bg_std
+    plume_groups = (is_plume != is_plume.shift()).cumsum()
+    plume_groups = (
+        plume_groups
+            .iloc[is_plume.values]  # Remove non-plumes
+            .reset_index()
+            .groupby('conc')
+            .agg(
+                   start_time = pd.NamedAgg(column="index", aggfunc="min"),
+                   end_time = pd.NamedAgg(column="index", aggfunc="max")
+            )
     )
     
-    # Find timepoints marking limits of plume
+    # Find timepoints marking limits of plume, marked as 2 std deviations above the bg
     plume_limits = []
-    for i in range(groups.shape[0]):
+    for i in range(plume_groups.shape[0]):
         # Get the last time before the group start time where the value is less than the BG
         start = (df
-           .loc[(df.index < groups.iloc[i].loc['start_time']) & (df['conc'] <= (bg_mean + extended_plume_cutoff * bg_std))]
+           .loc[(df.index < plume_groups.iloc[i].loc['start_time']) & (df['conc'] <= (bg_mean + extended_plume_cutoff * bg_std))]
            .tail(1)
            .index
         )[0]
         this_plume = pd.DataFrame([{
             "start": start - buffer_time,
-            "end": groups.iloc[i].loc['end_time'] + buffer_time,
+            "end": plume_groups.iloc[i].loc['end_time'] + buffer_time,
             "plume": i
         }])
         plume_limits.append(this_plume)
@@ -78,8 +68,8 @@ def detect_peaks(concentration,
     plume_limits = pd.concat(plume_limits)
     
     # Find all unique time points that are considered within a plume
-    plume_times = [df.loc[start:end].index.values for start, end in zip(plume_limits['start'], plume_limits['end'])]
-    plume_times = np.unique(np.concatenate(foo))
+    plume_times = [df.loc[start:end] for start, end in zip(plume_limits['start'], plume_limits['end'])]
+    plume_times = pd.concat(plume_times).index.unique()
     
     # Link back to main data set and find groups
     plume_times = df.loc[plume_times].copy()
