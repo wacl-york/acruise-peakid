@@ -11,11 +11,17 @@ NANO_SECS_TO_SECS = 1e9
 def datetime_to_seconds(dt):
     return dt.view(int) / NANO_SECS_TO_SECS
 
-def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
-                 extended_plume_cutoff=2, buffer=5, rolling_period=180,
-                 group_difference=2, plume_difference=1,
-                 background_window=660, bg_subtraction_window=10,
-                 group_difference_2=1, trapz_dx=1.0):
+def detect_peaks(concentration,
+                 times,
+                 std_low_threshold=0.5,    # Background std deviation
+                 plume_cutoff=3,           # Plume cutoff
+                 extended_plume_cutoff=2,  # Used to find the plume start and end points (can move back to where interpolated background started?)
+                 buffer=5,                 # Overlapping plumes
+                 rolling_period=180,       # Time to smooth background
+                 group_difference=1,       # Could probably work with 1s, shouldn't needed to be changed unless using different frequency
+                 background_window=660,    # Could try with different, could be lower
+                 bg_subtraction_window=10, # Trying to remove bit of noise
+                 trapz_dx=1.0):
                      
     buffer_time = datetime.timedelta(seconds=buffer)
     df = pd.DataFrame({'conc': concentration}, index=times)
@@ -26,6 +32,8 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
     sd_df = pd.DataFrame({'dt': sd_low_times})
     sd_df['seconds'] = datetime_to_seconds(sd_df['dt'])
     sd_df['group'] = (sd_df['seconds'].diff().abs() > group_difference).cumsum()
+    # Does it make a difference if use seconds or original time stamp? Main idea is to find subsequent values.
+    # Maybe row-number would be better!
     group_counts = sd_df.groupby('group').group.transform('count')
     longest_group_times = sd_df.loc[group_counts.eq(group_counts.max()), "dt"]
     bg = df.conc.loc[sd_df['dt']].reindex(df.index).interpolate().rolling(background_window).mean()
@@ -35,14 +43,11 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
     
     #first iteration of plume
     foo = df.copy()
-    # TODO finalise what to do with BG, whether to use the CO2 or SO2 version, or
-    # a mix
-    # CO2 subtracts 'bg' here but SO2 doesn't
     foo['conc'] = (foo['conc'] - bg).rolling(bg_subtraction_window).mean()
-    # SO2 adds bg_mean to rhs of inequality here, CO2 doesnt
     foo['conc'].loc[foo['conc'] < plume_cutoff*bg_std] = np.nan
+    
     foo['seconds'] = datetime_to_seconds(foo.index.values)
-    foo['group'] = (foo.dropna().seconds.diff().abs() > group_difference_2).cumsum()
+    foo['group'] = (foo.dropna().seconds.diff().abs() > group_difference).cumsum()
     # Get start and end time by group
     groups = (
         foo
@@ -66,42 +71,20 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
         this_plume = pd.DataFrame([{
             "start": start - buffer_time,
             "end": groups.iloc[i].loc['end_time'] + buffer_time,
-            "plume": i # TODO make plume int
-        }])  
+            "plume": i
+        }])
         plume_limits.append(this_plume)
         
     plume_limits = pd.concat(plume_limits)
-    # Combine overlapping groups
-    # This is acceptable because these limits are only used to find
-    # all timepoints that are considered during a plume
-    plume_limits["overlapping_group"] = (plume_limits["start"] > plume_limits["end"].shift()).cumsum()
-    plume_limits = plume_limits.groupby("overlapping_group").agg({"start":"min", "end": "max"}).reset_index()
     
-    # These 2 joins + subset are simply finding all timepoints from main df that fit into 
-    # one of these groups
-    # TODO how to speed up this operation?
-    # Old for loop seemed to be quicker...
-    plume_times = pd.merge_asof(
-        df,
-        plume_limits,
-        left_index=True,
-        right_on="start",
-        direction="backward",
-        allow_exact_matches=True
-    )
-    plume_times = pd.merge_asof(
-        plume_times,
-        plume_limits,
-        left_index=True,
-        right_on="end",
-        direction="forward",
-        allow_exact_matches=True
-    )
-    plume_times = plume_times.loc[plume_times["overlapping_group_x"] == plume_times["overlapping_group_y"]]
+    # Find all unique time points that are considered within a plume
+    plume_times = [df.loc[start:end].index.values for start, end in zip(plume_limits['start'], plume_limits['end'])]
+    plume_times = np.unique(np.concatenate(foo))
     
-    # Find plume groups (How does these differ from above?!)
+    # Link back to main data set and find groups
+    plume_times = df.loc[plume_times].copy()
     plume_times['seconds'] = datetime_to_seconds(plume_times.index)
-    groups = plume_times.groupby((plume_times.seconds.diff().abs() > plume_difference).cumsum())
+    groups = plume_times.groupby((plume_times.seconds.diff().abs() > group_difference).cumsum())
     
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter('%H:%M')
@@ -124,11 +107,11 @@ def detect_peaks(concentration, times, std_low_threshold=0.5, plume_cutoff=3,
     plt.show()
     
     return pd.concat(areas)
-    
-    # TODO:
-    #  - How many of these plots are useful? I.e. how many functions can I refactor
-    #  it into?
-    #  - Detect background
-    #  - Detect plumes
-    #  - Integrate area under plumes?
-    
+
+# TODO:
+#  - How many of these plots are useful? I.e. how many functions can I refactor
+#  it into?
+#  - Detect background
+#  - Detect plumes
+#  - Integrate area under plumes?
+
