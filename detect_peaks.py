@@ -15,7 +15,6 @@ def detect_peaks(concentration,
                  times,
                  std_low_threshold=0.5,    # Background std deviation
                  plume_cutoff=3,           # Plume cutoff
-                 extended_plume_cutoff=2,  # Used to find the plume start and end points (can move back to where interpolated background started?)
                  buffer=5,                 # Overlapping plumes
                  rolling_period=180,       # Time to smooth background
                  group_difference=1,       # Could probably work with 1s, shouldn't needed to be changed unless using different frequency
@@ -40,35 +39,21 @@ def detect_peaks(concentration,
     plume_groups = (is_plume != is_plume.shift()).cumsum()
     plume_groups = (
         plume_groups
-            .iloc[is_plume.values]  # Remove non-plumes
+            .iloc[is_plume.values]
             .reset_index()
             .groupby('conc')
             .agg(
-                   start_time = pd.NamedAgg(column="index", aggfunc="min"),
-                   end_time = pd.NamedAgg(column="index", aggfunc="max")
+                   start = pd.NamedAgg(column="index", aggfunc="min"),
+                   end = pd.NamedAgg(column="index", aggfunc="max")
+            )
+            .assign(
+                start = lambda x: x['start'] - buffer_time,
+                end = lambda x: x['end'] + buffer_time
             )
     )
     
-    # Find timepoints marking limits of plume, marked as 2 std deviations above the bg
-    plume_limits = []
-    for i in range(plume_groups.shape[0]):
-        # Get the last time before the group start time where the value is less than the BG
-        start = (df
-           .loc[(df.index < plume_groups.iloc[i].loc['start_time']) & (df['conc'] <= (bg_mean + extended_plume_cutoff * bg_std))]
-           .tail(1)
-           .index
-        )[0]
-        this_plume = pd.DataFrame([{
-            "start": start - buffer_time,
-            "end": plume_groups.iloc[i].loc['end_time'] + buffer_time,
-            "plume": i
-        }])
-        plume_limits.append(this_plume)
-        
-    plume_limits = pd.concat(plume_limits)
-    
     # Find all unique time points that are considered within a plume
-    plume_times = [df.loc[start:end] for start, end in zip(plume_limits['start'], plume_limits['end'])]
+    plume_times = [df.loc[start:end] for start, end in zip(plume_groups['start'], plume_groups['end'])]
     plume_times = pd.concat(plume_times).index.unique()
     
     # Link back to main data set and find groups
