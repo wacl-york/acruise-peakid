@@ -5,86 +5,196 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import matplotlib.dates as mdates
-mpl.rcParams['figure.figsize'] = (14.0, 8.0)
 
-NANO_SECS_TO_SECS = 1e9
 
-def datetime_to_seconds(dt):
-    return dt.view(int) / NANO_SECS_TO_SECS
+def identify_background(
+    conc: pd.Series,
+    bg_sd_window: int = 180,
+    bg_sd_threshold: float = 0.5,
+    bg_mean_window: int = 660,
+) -> pd.Series:
+    """
+    Identifies background from a concentration time-series.
 
-def detect_peaks(concentration,
-                 times,
-                 bg_sd_window=180,         # Time to smooth background
-                 bg_sd_threshold=0.5,      # Background std deviation
-                 bg_mean_window=660,       # Could try with different, could be lower
-                 bg_subtraction_window=10, # Trying to remove bit of noise
-                 plume_sd_threshold=3,     # Plume cutoff
-                 plume_buffer=10,          # Overlapping plumes in seconds
-                 trapz_dx=1.0):
-                     
-    df = pd.DataFrame({'conc': concentration}, index=times)
-    
-    # Define background as when rolling std deviation is below a threshold
-    roll_std = df.conc.fillna(method='ffill').rolling(bg_sd_window, center=True).std().rolling(bg_sd_window, center=True).mean()
-    is_bg = (~df['conc'].isna()) & (roll_std <= bg_sd_threshold)
-    
-    bg = df.conc.iloc[is_bg.values].reindex(df.index).interpolate().rolling(bg_mean_window).mean()
-    bg_mean = df.conc.iloc[is_bg.values].mean()
-    bg_std = df.conc.iloc[is_bg.values].std()
-    
-    # first iteration of plume detection
-    conc_bg_removed = (df['conc'] - bg).rolling(bg_subtraction_window).mean()
-    is_plume = conc_bg_removed >= plume_sd_threshold * bg_std
-    plume_groups = (is_plume != is_plume.shift()).cumsum()
-    plume_groups = (
-        plume_groups
-            .iloc[is_plume.values]
-            .reset_index()
-            .groupby('conc')
-            .agg(
-                   start = pd.NamedAgg(column="index", aggfunc="min"),
-                   end = pd.NamedAgg(column="index", aggfunc="max")
-            )
-            .sort_values(['start', 'end'])
+    This process takes 3 steps:
+
+        - Obtaining a smoothed rolling standard deviation of the background
+        - Identifying background measurements as those that lie within a set
+          sd threshold
+        - Interpolating values outside of this background threshold in a
+          linear manner and then using a rolling mean so that 'background'
+          measurements are available for the entire time-series.
+
+    Args:
+        - conc (pd.Series): Concentration time-series.
+        - bg_sd_window (int): Window size for the rolling standard deviation
+          smooth to identify the background.
+        - bg_sd_threshold (float): Background measurements are considered as
+          those whose rolling sd is within this threshold.
+        - bg_mean_window (int): The rolling mean to smooth the interpolated
+          background
+
+    Returns:
+        The smoothed background covering the full times series as a pd.Series
+        object.
+    """
+    # Smooth concentration to get smoothed rolling SD
+    roll_std = (
+        conc.fillna(method="ffill")
+        .rolling(bg_sd_window, center=True)
+        .std()
+        .rolling(bg_sd_window, center=True)
+        .mean()
     )
-    plume_intervals = [pd.Interval(s, e, closed="both") for s, e in zip(plume_groups['start'], plume_groups['end'])]
-    
+    # Define background as when rolling std deviation is below a threshold
+    is_bg = (~conc.isna()) & (roll_std <= bg_sd_threshold)
+    # Interpolate background values when don't have background
+    bg = (
+        conc.loc[is_bg].reindex(conc.index).interpolate().rolling(bg_mean_window).mean()
+    )
+
+    return bg
+
+
+def detect_plumes(
+    conc: pd.Series,
+    bg: pd.Series,
+    smooth_window: int = 10,
+    plume_sd_threshold: float = 3,
+    plume_buffer: float = 10,
+) -> pd.DataFrame:
+    """
+    Detects plumes in a concentration time series.
+
+    Args:
+        - conc (pd.Series): The concentration time-series. Should have a
+            Datetime index.
+        - bg (pd.Series): The smoothed background time-series, as can be
+            obtained from identify_background(). Should have the same
+            Datetime index as conc.
+        - smooth_window (int): After the background has been subtracted,
+          the concentration is smoothed using a rolling mean with window
+          size smooth_window.
+        - plume_sd_threshold (float): Plumes are identified as samples
+          greater than certain number of standard deviations from a
+          smoothed background.
+        - plume_buffer (float): A buffer in seconds applied to plumes, so
+          that if they are overlapping they are merged into the same plume.
+
+    Returns:
+        A pd.DataFrame where each row corresponds to a unique plume, whose
+        time boundaries are contained in the 2 columns: `start` and `end`.
+    """
+
+    df = pd.DataFrame({"conc": conc, "bg": bg})
+
+    # first iteration of plume detection
+    df["bg_removed_smooth"] = (df["conc"] - df["bg"]).rolling(smooth_window).mean()
+    df["is_plume"] = df["bg_removed_smooth"] >= plume_sd_threshold * df["bg"].std()
+    df["plume_raw"] = (df["is_plume"] != df["is_plume"].shift()).cumsum()
+    plume_groups = (
+        df.loc[df["is_plume"]]
+        .reset_index()
+        .groupby("plume_raw")
+        .agg(
+            start=pd.NamedAgg(column="index", aggfunc="min"),
+            end=pd.NamedAgg(column="index", aggfunc="max"),
+        )
+        .sort_values(["start", "end"])
+    )
+    plume_intervals = [
+        pd.Interval(s, e, closed="both")
+        for s, e in zip(plume_groups["start"], plume_groups["end"])
+    ]
+
     # Combine overlapping plumes
     buffer_time = datetime.timedelta(seconds=plume_buffer)
+
     def reduce_intervals(acc, el):
         plume_with_buffer = pd.Interval(acc[0].left, acc[0].right + buffer_time)
         if plume_with_buffer.overlaps(el):
             return [pd.Interval(acc[0].left, el.right)] + acc[1:]
         else:
             return [el] + acc
-    
+
     plume_overlap = reduce(reduce_intervals, plume_intervals[1::], [plume_intervals[0]])
-    
+
     # Just turn into DataFrame for user friendliness
-    plumes_condensed = pd.DataFrame([{'start': x.left, 'end': x.right} for x in plume_overlap]).sort_values(['start'])
-    
-    fig, ax = plt.subplots()
-    myFmt = mdates.DateFormatter('%H:%M')
-    ax.xaxis.set_major_formatter(myFmt)
-    # TODO get label from args
-    ax.set_ylabel('Concentration')
-    ax.set_xlabel('Time / UTC')
-    ax.plot(df.conc, color='gray', alpha=.5)
-    
+    plumes_condensed = pd.DataFrame(
+        [{"start": x.left, "end": x.right} for x in plume_overlap]
+    ).sort_values(["start"])
+    return plumes_condensed
+
+
+def integrate_aup_trapz(
+    conc: pd.Series, plumes: pd.DataFrame, dx: float = 1.0
+) -> pd.DataFrame:
+    """
+    Integrate the Area Under a Plume (aup) using a trapezoidal method.
+
+    Args:
+        - conc (pd.Series): The concentration time-series with the background
+          removed. Must have a Datetime index.
+        - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
+          containing plume boundaries, as returned by detect_plumes()
+        - dx (float): Sampling time, passed onto the dz argument of
+          np.trapz.
+
+    Returns:
+        A pd.DataFrame with one row per plume and 3 columns `start`, `end`, and
+        `area`. The first 2 are the same as in the input `plumes`, while `area`
+        contains the integrated area.
+    """
     areas = []
-    for row in plumes_condensed.itertuples():
-        raw = df.conc.loc[row.start:row.end]
-        bg_removed = raw - bg.loc[row.start:row.end]
-        ax.plot(raw)
-        this_df = pd.DataFrame([{
-            'start': row.start,
-            'end': row.end,
-            'area': np.trapz(bg_removed, dx=trapz_dx)
-        }])
+    for row in plumes.itertuples():
+        this_df = pd.DataFrame(
+            [
+                {
+                    "start": row.start,
+                    "end": row.end,
+                    "area": np.trapz(conc.loc[row.start : row.end], dx=dx),
+                }
+            ]
+        )
         areas.append(this_df)
-    plt.show()
-    
     return pd.concat(areas)
+
+
+def plot_plumes(
+    conc: pd.Series,
+    plumes: pd.DataFrame,
+    ylabel: str = "Concentration",
+    xlabel: str = "Time (UTC)",
+    date_fmt: str = "%H:%M",
+    bg_alpha: float = 0.5,
+) -> None:
+    """
+    Plots plumes against the background concentration.
+
+    Args:
+        - conc (pd.Series): The concentration time-series with the background
+          removed. Must have a Datetime index.
+        - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
+          containing plume boundaries, as returned by detect_plumes()
+        - ylabel (str): y-axis label
+        - xlabel (str): x-axis label
+        - date_fmt (str): How to display the x-axis datetime breaks
+        - bg_alpha (float): Alpha level of the background concentration.
+
+    Returns:
+        None, plots a figure as a side-effect.
+    """
+    # TODO get working
+    fig, ax = plt.subplots()
+    myFmt = mdates.DateFormatter(date_fmt)
+    ax.xaxis.set_major_formatter(myFmt)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    ax.plot(conc, color="gray", alpha=bg_alpha)
+    for row in plumes.itertuples():
+        ax.plot(conc.loc[row.start : row.end])
+    plt.show()
+
 
 # TODO:
 #  - How many of these plots are useful? I.e. how many functions can I refactor
@@ -92,4 +202,3 @@ def detect_peaks(concentration,
 #  - Detect background
 #  - Detect plumes
 #  - Integrate area under plumes?
-

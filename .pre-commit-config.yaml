@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+        name: Black styler
+        language_version: python3.10
+        stages: [commit]
+  - repo: local
+    hooks:
+      - id: mypy
+        name: MyPy
+        language: python
+        additional_dependencies: ["pandas-stubs"]
+        entry: mypy detect_peaks.py
+        pass_filenames: false
+        stages: [commit]
