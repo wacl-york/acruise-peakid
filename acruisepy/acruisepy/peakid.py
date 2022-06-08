@@ -184,7 +184,6 @@ def plot_plumes(
     Returns:
         None, plots a figure as a side-effect.
     """
-    # TODO get working
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter(date_fmt)
     ax.xaxis.set_major_formatter(myFmt)
@@ -194,11 +193,3 @@ def plot_plumes(
     for row in plumes.itertuples():
         ax.plot(conc.loc[row.start : row.end])
     plt.show()
-
-
-# TODO:
-#  - How many of these plots are useful? I.e. how many functions can I refactor
-#  it into?
-#  - Detect background
-#  - Detect plumes
-#  - Integrate area under plumes?
