@@ -1,3 +1,4 @@
+from functools import reduce
 import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,11 +19,9 @@ def detect_peaks(concentration,
                  bg_mean_window=660,       # Could try with different, could be lower
                  bg_subtraction_window=10, # Trying to remove bit of noise
                  plume_sd_threshold=3,     # Plume cutoff
-                 plume_buffer=5,           # Overlapping plumes in seconds
-                 group_difference=1,       # Could probably work with 1s, shouldn't needed to be changed unless using different frequency
+                 plume_buffer=10,          # Overlapping plumes in seconds
                  trapz_dx=1.0):
                      
-    buffer_time = datetime.timedelta(seconds=plume_buffer)
     df = pd.DataFrame({'conc': concentration}, index=times)
     
     # Define background as when rolling std deviation is below a threshold
@@ -46,20 +45,23 @@ def detect_peaks(concentration,
                    start = pd.NamedAgg(column="index", aggfunc="min"),
                    end = pd.NamedAgg(column="index", aggfunc="max")
             )
-            .assign(
-                start = lambda x: x['start'] - buffer_time,
-                end = lambda x: x['end'] + buffer_time
-            )
+            .sort_values(['start', 'end'])
     )
+    plume_intervals = [pd.Interval(s, e, closed="both") for s, e in zip(plume_groups['start'], plume_groups['end'])]
     
-    # Find all unique time points that are considered within a plume
-    plume_times = [df.loc[start:end] for start, end in zip(plume_groups['start'], plume_groups['end'])]
-    plume_times = pd.concat(plume_times).index.unique()
+    # Combine overlapping plumes
+    buffer_time = datetime.timedelta(seconds=plume_buffer)
+    def reduce_intervals(acc, el):
+        plume_with_buffer = pd.Interval(acc[0].left, acc[0].right + buffer_time)
+        if plume_with_buffer.overlaps(el):
+            return [pd.Interval(acc[0].left, el.right)] + acc[1:]
+        else:
+            return [el] + acc
     
-    # Link back to main data set and find groups
-    plume_times = df.loc[plume_times].copy()
-    plume_times['seconds'] = datetime_to_seconds(plume_times.index)
-    groups = plume_times.groupby((plume_times.seconds.diff().abs() > group_difference).cumsum())
+    plume_overlap = reduce(reduce_intervals, plume_intervals[1::], [plume_intervals[0]])
+    
+    # Just turn into DataFrame for user friendliness
+    plumes_condensed = pd.DataFrame([{'start': x.left, 'end': x.right} for x in plume_overlap]).sort_values(['start'])
     
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter('%H:%M')
@@ -68,14 +70,15 @@ def detect_peaks(concentration,
     ax.set_ylabel('Concentration')
     ax.set_xlabel('Time / UTC')
     ax.plot(df.conc, color='gray', alpha=.5)
-    for group in groups:
-        ax.plot(group[1].conc)
+    
     areas = []
-    for i, dff in groups:
-        bg_removed = dff.conc - bg[dff.index]
+    for row in plumes_condensed.itertuples():
+        raw = df.conc.loc[row.start:row.end]
+        bg_removed = raw - bg.loc[row.start:row.end]
+        ax.plot(raw)
         this_df = pd.DataFrame([{
-            'start': dff.index[0],
-            'end': dff.index[-1],
+            'start': row.start,
+            'end': row.end,
             'area': np.trapz(bg_removed, dx=trapz_dx)
         }])
         areas.append(this_df)
