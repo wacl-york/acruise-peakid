@@ -37,7 +37,7 @@ Run `help(peakid.identify_background)` to see the available options.
 NB: there will soon be a function available to plot the background to help tuning the parameters.
 
 ```python
-bg = peakid.identify_background(df['conc'])
+bg = peakid.identify_background(df_co2['conc'])
 ```
 
 Once the background has been identified, the plumes can be detected using `peakid.detect_plumes`, which takes the concentration, the background, and several more tuning parameters (again use `help(peakid.detect_plumes)` to see a full list) to pulll out the parameters.
@@ -46,8 +46,8 @@ It's crucial here that both the concentration and the background have a Datetime
 The plumes can be visually inspected using the `peakid.plot_plumes` function, adjusting the parameters in the previous step until necessary.
 
 ```python
-plumes = peakid.detect_plumes(df['conc'], bg)
-peakid.plot_plumes(df['conc'], plumes)
+plumes = peakid.detect_plumes(df_co2['conc'], bg)
+peakid.plot_plumes(df_co2['conc'], plumes)
 ```
 
 Once the plumes have been finalised, the area under the plumes can be calculated.
@@ -55,7 +55,8 @@ This is currently done using a trapezoidal approach, see the documentation for `
 It's important to subtract the background from the concentration time-series for this function.
 
 ```python
-co2_aups = peakid.integrate_aup_trapz(df['conc'] - bg, plumes, dx=0.1)
+co2_areas = peakid.integrate_aup_trapz(df_co2['conc'] - bg, plumes, dx=0.1)
+co2_areas
 ```
 
 ## R package
