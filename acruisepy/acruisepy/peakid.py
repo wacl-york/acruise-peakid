@@ -59,7 +59,6 @@ def identify_background(
 def detect_plumes(
     conc: pd.Series,
     bg: pd.Series,
-    smooth_window: int = 10,
     plume_sd_threshold: float = 3,
     plume_buffer: float = 10,
 ) -> pd.DataFrame:
@@ -72,14 +71,11 @@ def detect_plumes(
         - bg (pd.Series): The smoothed background time-series, as can be
             obtained from identify_background(). Should have the same
             Datetime index as conc.
-        - smooth_window (int): After the background has been subtracted,
-          the concentration is smoothed using a rolling mean with window
-          size smooth_window.
         - plume_sd_threshold (float): Plumes are identified as samples
-          greater than certain number of standard deviations from a
-          smoothed background.
+            greater than certain number of standard deviations from a
+            smoothed background.
         - plume_buffer (float): A buffer in seconds applied to plumes, so
-          that if they are overlapping they are merged into the same plume.
+            that if they are overlapping they are merged into the same plume.
 
     Returns:
         A pd.DataFrame where each row corresponds to a unique plume, whose
@@ -89,13 +85,12 @@ def detect_plumes(
     df = pd.DataFrame({"conc": conc, "bg": bg})
 
     # first iteration of plume detection
-    df["bg_removed_smooth"] = (df["conc"] - df["bg"]).rolling(smooth_window).mean()
-    df["is_plume"] = df["bg_removed_smooth"] >= plume_sd_threshold * df["bg"].std()
-    df["plume_raw"] = (df["is_plume"] != df["is_plume"].shift()).cumsum()
+    df["is_plume"] = df["conc"] >= (df["bg"] + plume_sd_threshold * df["bg"].std())
+    df["plume_group"] = (df["is_plume"] != df["is_plume"].shift()).cumsum()
     plume_groups = (
         df.loc[df["is_plume"]]
         .reset_index()
-        .groupby("plume_raw")
+        .groupby("plume_group")
         .agg(
             start=pd.NamedAgg(column="index", aggfunc="min"),
             end=pd.NamedAgg(column="index", aggfunc="max"),
@@ -158,6 +153,51 @@ def integrate_aup_trapz(
         )
         areas.append(this_df)
     return pd.concat(areas)
+
+
+def plot_background(
+    conc: pd.Series,
+    background: pd.DataFrame,
+    plume_sd_threshold: float = 3,
+    ylabel: str = "Concentration",
+    xlabel: str = "Time (UTC)",
+    date_fmt: str = "%H:%M",
+    bg_alpha: float = 0.5,
+) -> None:
+    """
+    Plots the concentration time-series highlighting the extracted background
+    (red) and the threshold for what is considered a plume (orange).
+
+    Args:
+        - conc (pd.Series): The concentration time-series. Must have a Datetime
+            index.
+        - background (pd.Series): The background time-series, as obtained
+          from identify_background(). Must have a Datetime index.
+        - plume_sd_threshold (float): Plumes are identified as samples
+            greater than certain number of standard deviations from a
+            smoothed background.
+        - ylabel (str): y-axis label
+        - xlabel (str): x-axis label
+        - date_fmt (str): How to display the x-axis datetime breaks
+        - bg_alpha (float): Alpha level of the background concentration.
+
+    Returns:
+        None, plots a figure as a side-effect.
+    """
+    fig, ax = plt.subplots()
+    myFmt = mdates.DateFormatter(date_fmt)
+    ax.xaxis.set_major_formatter(myFmt)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    ax.plot(conc, color="gray", alpha=bg_alpha)
+    ax.plot(background, color="red", label="Mean background")
+    ax.plot(
+        background + plume_sd_threshold * background.std(),
+        color="orange",
+        label="Plume threshold",
+    )
+    ax.legend()
+    plt.show()
 
 
 def plot_plumes(
