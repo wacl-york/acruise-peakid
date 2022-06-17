@@ -39,20 +39,22 @@ bg = peakid.identify_background(df_co2['conc'], bg_sd_window=180, bg_sd_threshol
 ```
 
 To determine the appropriateness of the extracted background, `plot_background` plots the concentration time-series with the background highlighted alongside the limit of what is considered a plume, defined as `plume_sd_threshold` standard deviations about the mean background.
+Any plumes will then be determined to start from the point at which they cross `plume_sd_starting` standard deviations above the mean background.
+If they were considered to start from the point at which they cross the `plume_sd_threshold` boundary instead then some plume data would be lost.
 
 ```python
-peakid.plot_background(df_co2['conc'], bg, plume_sd_threshold=3)
+peakid.plot_background(df_co2['conc'], bg, plume_sd_threshold=4, plume_sd_starting=2)
 ```
 
 ![the extracted background concentration level highlighted on the concentration time-series](images/background_py.png)
 
-Once both a satisfactory background and a suitable value for `plume_sd_threshold` have been identified, the plumes can be detected using `peakid.detect_plumes` (again use `help(peakid.detect_plumes)` to see full details for what arguments it takes).
+Once both a satisfactory background and suitable values for `plume_sd_threshold` and `plume_sd_starting` have been identified, the plumes can be detected using `peakid.detect_plumes` (again use `help(peakid.detect_plumes)` to see full details for what arguments it takes).
 It's crucial here that both the concentration and the background have a DatetimeIndex, which should be the case if they are loaded in from CSV as shown in the example above.
 
 The plumes can be visually inspected using the `peakid.plot_plumes` function, adjusting the parameters in the previous step until necessary.
 
 ```python
-plumes = peakid.detect_plumes(df_co2['conc'], bg, plume_sd_threshold=3, plume_buffer=10)
+plumes = peakid.detect_plumes(df_co2['conc'], bg, plume_sd_threshold=4, plume_sd_starting=2, plume_buffer=5)
 peakid.plot_plumes(df_co2['conc'], plumes)
 ```
 

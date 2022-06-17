@@ -60,6 +60,7 @@ def detect_plumes(
     conc: pd.Series,
     bg: pd.Series,
     plume_sd_threshold: float = 3,
+    plume_sd_starting: float = 2,
     plume_buffer: float = 10,
 ) -> pd.DataFrame:
     """
@@ -74,6 +75,9 @@ def detect_plumes(
         - plume_sd_threshold (float): Plumes are identified as samples
             greater than certain number of standard deviations from a
             smoothed background.
+        - plume_sd_starting (float): For any identified plumes, it is determined
+            to have started once it reached this many standard deviations above
+            the background.
         - plume_buffer (float): A buffer in seconds applied to plumes, so
             that if they are overlapping they are merged into the same plume.
 
@@ -85,7 +89,7 @@ def detect_plumes(
     df = pd.DataFrame({"conc": conc, "bg": bg})
 
     # first iteration of plume detection
-    df["is_plume"] = df["conc"] >= (df["bg"] + plume_sd_threshold * df["bg"].std())
+    df["is_plume"] = df["conc"] > (df["bg"] + plume_sd_threshold * df["bg"].std())
     df["plume_group"] = (df["is_plume"] != df["is_plume"].shift()).cumsum()
     plume_groups = (
         df.loc[df["is_plume"]]
@@ -102,6 +106,22 @@ def detect_plumes(
         for s, e in zip(plume_groups["start"], plume_groups["end"])
     ]
 
+    # Define plumes as starting from when they crossed the plume_sd_starting
+    # threshold
+    earliest_starting = df["conc"].shift() <= (
+        df["bg"] + plume_sd_starting * df["bg"].std()
+    )
+    latest_starting = df["conc"].shift(-1) <= (
+        df["bg"] + plume_sd_starting * df["bg"].std()
+    )
+    plume_intervals_extended = [
+        pd.Interval(
+            df.loc[(df.index < plume.left) & earliest_starting].index.max(),
+            df.loc[(df.index > plume.right) & latest_starting].index.min(),
+        )
+        for plume in plume_intervals
+    ]
+
     # Combine overlapping plumes
     buffer_time = datetime.timedelta(seconds=plume_buffer)
 
@@ -112,7 +132,9 @@ def detect_plumes(
         else:
             return [el] + acc
 
-    plume_overlap = reduce(reduce_intervals, plume_intervals[1::], [plume_intervals[0]])
+    plume_overlap = reduce(
+        reduce_intervals, plume_intervals_extended[1::], [plume_intervals_extended[0]]
+    )
 
     # Just turn into DataFrame for user friendliness
     plumes_condensed = pd.DataFrame(
@@ -159,6 +181,7 @@ def plot_background(
     conc: pd.Series,
     background: pd.DataFrame,
     plume_sd_threshold: float = 3,
+    plume_sd_starting: float = 2,
     ylabel: str = "Concentration",
     xlabel: str = "Time (UTC)",
     date_fmt: str = "%H:%M",
@@ -166,7 +189,8 @@ def plot_background(
 ) -> None:
     """
     Plots the concentration time-series highlighting the extracted background
-    (red) and the threshold for what is considered a plume (orange).
+    (red), the threshold for what is considered a plume (orange), and when
+    plumes will be determined to have started at (blue).
 
     Args:
         - conc (pd.Series): The concentration time-series. Must have a Datetime
@@ -176,6 +200,9 @@ def plot_background(
         - plume_sd_threshold (float): Plumes are identified as samples
             greater than certain number of standard deviations from a
             smoothed background.
+        - plume_sd_starting (float): For any identified plumes, it is determined
+            to have started once it reached this many standard deviations above
+            the background.
         - ylabel (str): y-axis label
         - xlabel (str): x-axis label
         - date_fmt (str): How to display the x-axis datetime breaks
@@ -195,6 +222,11 @@ def plot_background(
         background + plume_sd_threshold * background.std(),
         color="orange",
         label="Plume threshold",
+    )
+    ax.plot(
+        background + plume_sd_starting * background.std(),
+        color="steelblue",
+        label="Plume starting point",
     )
     ax.legend()
     plt.show()
