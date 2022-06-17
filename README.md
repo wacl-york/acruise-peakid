@@ -30,12 +30,12 @@ end_time = datetime.datetime(2021, 10, 4, 13, 30, 0)
 df_co2 = df_co2.loc[start_time : end_time]
 ```
 
-The first step is to identify the background level, against which plumes will compared.
+The first step is to identify the background level, against which plumes will be compared.
 The `peakid.identify_background` function takes in the concentration and several tuning parameters, here the default values are used but it is highly likely you will need to tune them for your dataset. 
-Run `help(peakid.identify_background)` to see the available options.
+Run `help(peakid.identify_background)` to see a description of these parameters.
 
 ```python
-bg = peakid.identify_background(df_co2['conc'])
+bg = peakid.identify_background(df_co2['conc'], bg_sd_window=180, bg_sd_threshold=0.5, bg_mean_window=660)
 ```
 
 To determine the appropriateness of the extracted background, `plot_background` plots the concentration time-series with the background highlighted alongside the limit of what is considered a plume, defined as `plume_sd_threshold` standard deviations about the mean background.
@@ -44,13 +44,13 @@ To determine the appropriateness of the extracted background, `plot_background` 
 peakid.plot_background(df_co2['conc'], bg, plume_sd_threshold=3)
 ```
 
-Once both a satisfactory background and a suitable value for `plume_sd_threshold` have been identified, the plumes can be detected using `peakid.detect_plumes` (again use `help(peakid.detect_plumes)` to see a argument list).
+Once both a satisfactory background and a suitable value for `plume_sd_threshold` have been identified, the plumes can be detected using `peakid.detect_plumes` (again use `help(peakid.detect_plumes)` to see full details for what arguments it takes).
 It's crucial here that both the concentration and the background have a DatetimeIndex, which should be the case if they are loaded in from CSV as shown in the example above.
 
 The plumes can be visually inspected using the `peakid.plot_plumes` function, adjusting the parameters in the previous step until necessary.
 
 ```python
-plumes = peakid.detect_plumes(df_co2['conc'], bg, plume_sd_threshold=3)
+plumes = peakid.detect_plumes(df_co2['conc'], bg, plume_sd_threshold=3, plume_buffer=10)
 peakid.plot_plumes(df_co2['conc'], plumes)
 ```
 
