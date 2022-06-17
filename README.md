@@ -44,6 +44,8 @@ To determine the appropriateness of the extracted background, `plot_background` 
 peakid.plot_background(df_co2['conc'], bg, plume_sd_threshold=3)
 ```
 
+![the extracted background concentration level highlighted on the concentration time-series](images/background_py.png)
+
 Once both a satisfactory background and a suitable value for `plume_sd_threshold` have been identified, the plumes can be detected using `peakid.detect_plumes` (again use `help(peakid.detect_plumes)` to see full details for what arguments it takes).
 It's crucial here that both the concentration and the background have a DatetimeIndex, which should be the case if they are loaded in from CSV as shown in the example above.
 
@@ -53,6 +55,8 @@ The plumes can be visually inspected using the `peakid.plot_plumes` function, ad
 plumes = peakid.detect_plumes(df_co2['conc'], bg, plume_sd_threshold=3, plume_buffer=10)
 peakid.plot_plumes(df_co2['conc'], plumes)
 ```
+
+![the extracted plumes highlighted on the concentration time-series](images/plumes_py.png)
 
 Once the plumes have been finalised, the area under the plumes can be calculated.
 This is currently done using a trapezoidal approach, see the documentation for `numpy.trapz` for further details.
