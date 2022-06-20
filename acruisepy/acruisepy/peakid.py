@@ -49,8 +49,14 @@ def identify_background(
     # Define background as when rolling std deviation is below a threshold
     is_bg = (~conc.isna()) & (roll_std <= bg_sd_threshold)
     # Interpolate background values when don't have background
+    # If want to interpolate everything, so including the NAs introduced by the
+    # rolling functions then use limit_direction="both"
     bg = (
-        conc.loc[is_bg].reindex(conc.index).interpolate().rolling(bg_mean_window).mean()
+        conc.loc[is_bg]
+        .reindex(conc.index)
+        .interpolate(limit_area="inside")
+        .rolling(bg_mean_window)
+        .mean()
     )
 
     return bg
