@@ -94,42 +94,39 @@ def detect_plumes(
 
     df = pd.DataFrame({"conc": conc, "bg": bg})
 
-    # first iteration of plume detection
+    # Derive useful values for identifying plumes
     df["is_plume"] = df["conc"] > (df["bg"] + plume_sd_threshold * df["bg"].std())
-    df["plume_group"] = (df["is_plume"] != df["is_plume"].shift()).cumsum()
+    df["is_plume_starting"] = df["conc"] > (
+        df["bg"] + plume_sd_starting * df["bg"].std()
+    )
+    df["plume_group_starting"] = (
+        df["is_plume_starting"] != df["is_plume_starting"].shift()
+    ).cumsum()
+
+    # Find all groups where concentration are > than the lower starting threshold, and that
+    # also have at least one value greater than the higher threshold required to say it is a plume
     plume_groups = (
-        df.loc[df["is_plume"]]
+        df.loc[df["is_plume_starting"]]
         .reset_index()
-        .groupby("plume_group")
+        .groupby("plume_group_starting")
         .agg(
+            has_plume=pd.NamedAgg(column="is_plume", aggfunc="sum"),
             start=pd.NamedAgg(column="index", aggfunc="min"),
             end=pd.NamedAgg(column="index", aggfunc="max"),
         )
+        .query("has_plume > 0")
+        .drop("has_plume", axis=1)
         .sort_values(["start", "end"])
     )
+
+    # Combine overlapping plumes
+    buffer_time = datetime.timedelta(seconds=plume_buffer)
+    # Use Interval data structure here which is effectively syntatical sugar
+    # around a tuple
     plume_intervals = [
         pd.Interval(s, e, closed="both")
         for s, e in zip(plume_groups["start"], plume_groups["end"])
     ]
-
-    # Define plumes as starting from when they crossed the plume_sd_starting
-    # threshold
-    earliest_starting = df["conc"].shift() <= (
-        df["bg"] + plume_sd_starting * df["bg"].std()
-    )
-    latest_starting = df["conc"].shift(-1) <= (
-        df["bg"] + plume_sd_starting * df["bg"].std()
-    )
-    plume_intervals_extended = [
-        pd.Interval(
-            df.loc[(df.index < plume.left) & earliest_starting].index.max(),
-            df.loc[(df.index > plume.right) & latest_starting].index.min(),
-        )
-        for plume in plume_intervals
-    ]
-
-    # Combine overlapping plumes
-    buffer_time = datetime.timedelta(seconds=plume_buffer)
 
     def reduce_intervals(acc, el):
         plume_with_buffer = pd.Interval(acc[0].left, acc[0].right + buffer_time)
@@ -138,11 +135,9 @@ def detect_plumes(
         else:
             return [el] + acc
 
-    plume_overlap = reduce(
-        reduce_intervals, plume_intervals_extended[1::], [plume_intervals_extended[0]]
-    )
+    plume_overlap = reduce(reduce_intervals, plume_intervals[1::], [plume_intervals[0]])
 
-    # Just turn into DataFrame for user friendliness
+    # Convert into DataFrame for user friendliness
     plumes_condensed = pd.DataFrame(
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])

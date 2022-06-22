@@ -29,21 +29,44 @@ identify_background <- function(concentration,
     # rolling functions then use rule=2
     output[!is_bg] <- approx(output, xout=which(!is_bg), rule=1)$y
     RcppRoll::roll_mean(output, n=bg_mean_window, align="right", fill=NA)
+}
 
+#' @import data.table
+detect_plumes <- function(
+    conc,
+    bg,
+    time,
+    plume_sd_threshold=3,
+    plume_sd_starting=2,
+    plume_buffer=10) {
 
-    # TODO look at edges!
+    dt <- data.table::data.table(time=time, conc=conc, bg=bg)
+    dt[, time_delta := as.integer((time - min(time))*1000)]
+    dt[, is_plume_starting := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_starting * sd(bg, na.rm=T))]
+    dt[, is_plume := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_threshold * sd(bg, na.rm=T))]
+    dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill=F, type="lag")))]
 
-    #roll_std = (
-    #    conc.fillna(method="ffill")
-    #    .rolling(bg_sd_window, center=True)
-    #    .std()
-    #    .rolling(bg_sd_window, center=True)
-    #    .mean()
-    #)
-    ## Define background as when rolling std deviation is below a threshold
-    #is_bg = (~conc.isna()) & (roll_std <= bg_sd_threshold)
-    ## Interpolate background values when don't have background
-    #bg = (
-    #    conc.loc[is_bg].reindex(conc.index).interpolate().rolling(bg_mean_window).mean()
-    #)
+    plume_groups_dt <- dt[ is_plume_starting == TRUE, list("has_plume"=sum(is_plume), start=min(time_delta), end=max(time_delta)), by=plume_group_starting][has_plume > 0]
+
+    # Find overlapping plumes within the buffer
+    setkey(plume_groups_dt, start, end)
+    overlaps <- foverlaps(plume_groups_dt,
+              plume_groups_dt[, .(start, end = end + plume_buffer*1000)],
+              type="any",
+              which=TRUE)
+
+    overlaps[, c("x_prev_seen", "y_prev_seen") := list(duplicated(xid), duplicated(yid))]
+    overlaps[, combined_plume := cumsum(!(x_prev_seen | y_prev_seen))]
+    # Find group for each row number
+    new_plumes <- unique(overlaps, by=c("xid", "combined_plume"))
+    # Join back into overlapping plumes then elongate plumes with new members
+    plumes_final <- plume_groups_dt[, xid := 1:nrow(plume_groups_dt)][new_plumes, on="xid"][, list(start=min(start),
+                                                                                   end=min(end)),
+                                                                            by=combined_plume]
+    # Then add on baseline and convert back to datetime
+    plumes_final[, combined_plume := NULL]
+    setorder(plumes_final, start)
+    plumes_final[, c("start", "end") := list(lubridate::as_datetime(start/1000 + min(dt$time)),
+                                             lubridate::as_datetime(end/1000 + min(dt$time)))]
+    as.data.frame(plumes_final)
 }
