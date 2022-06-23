@@ -14,8 +14,7 @@ Imports:
     dplyr,
     data.table,
     nanotime,
-    RcppRoll,
-    tidyr
+    RcppRoll
 Suggests: 
     readr,
     reticulate,

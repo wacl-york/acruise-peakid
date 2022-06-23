@@ -95,23 +95,42 @@ plot_background <- function(conc,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
-    df <- data.frame(conc = conc, time = as.POSIXct(times), bg = background) |>
-        dplyr::mutate(
-            bg_starting = bg + plume_sd_starting * sd(background, na.rm = T),
-            bg_threshold = bg + plume_sd_threshold * sd(background, na.rm = T)
-        ) |>
-        tidyr::pivot_longer(-time) |>
-        dplyr::mutate(name = factor(name,
-            levels = c("conc", "bg", "bg_starting", "bg_threshold"),
-            labels = c("Concentration", "Mean background", "Plume starting point", "Plume threshold")
-        ))
+    dt <- data.table(conc = conc, time = times, bg = background)
+    dt[, bg_starting := bg + plume_sd_starting * sd(bg, na.rm = T)]
+    dt[, bg_threshold := bg + plume_sd_threshold * sd(bg, na.rm = T)]
+    dt <- melt(dt, id.vars = "time")
+    dt[, variable := factor(variable,
+        levels = c("conc", "bg", "bg_starting", "bg_threshold"),
+        labels = c("Concentration", "Mean background", "Plume starting point", "Plume threshold")
+    )]
 
-    df |>
-        ggplot2::ggplot(ggplot2::aes(x = time, y = value, colour = name, alpha = name)) +
+    ggplot2::ggplot(dt, ggplot2::aes(x = time, y = value, colour = variable, alpha = variable)) +
         ggplot2::geom_line() +
         ggplot2::labs(x = xlabel, y = ylabel) +
         ggplot2::scale_x_datetime(date_labels = date_fmt) +
         ggplot2::scale_colour_manual("", values = c("gray", "red", "steelblue", "orange")) +
         ggplot2::scale_alpha_manual("", values = c(bg_alpha, 1, 1, 1)) +
+        ggplot2::theme_minimal()
+}
+
+plot_plumes <- function(conc,
+                        times,
+                        plumes,
+                        ylabel = "Concentration",
+                        xlabel = "Time (UTC)",
+                        date_fmt = "%H:%M",
+                        bg_alpha = 0.5) {
+    dt <- data.table(conc = conc, time = times)
+    plumes_dt <- as.data.table(plumes)
+    plumes_dt[, plume_id := 1:nrow(plumes_dt)]
+    dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), conc, plume_id)]
+
+    ggplot2::ggplot(dt, ggplot2::aes(x = time, y = conc, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
+        ggplot2::geom_line() +
+        ggplot2::labs(x = xlabel, y = ylabel) +
+        ggplot2::scale_x_datetime(date_labels = date_fmt) +
+        ggplot2::scale_colour_discrete("") +
+        ggplot2::scale_alpha_manual("", values = c(1, bg_alpha)) +
+        ggplot2::guides(colour = "none", alpha = "none") +
         ggplot2::theme_minimal()
 }
