@@ -85,3 +85,33 @@ integrate_aup_trapz <- function(conc, times, plumes, dx = 1) {
     setcolorder(areas, c("start", "end", "area"))
     areas
 }
+
+plot_background <- function(conc,
+                            times,
+                            background,
+                            plume_sd_threshold = 3,
+                            plume_sd_starting = 2,
+                            ylabel = "Concentration",
+                            xlabel = "Time (UTC)",
+                            date_fmt = "%H:%M",
+                            bg_alpha = 0.5) {
+    df <- data.frame(conc = conc, time = as.POSIXct(times), bg = background) |>
+        dplyr::mutate(
+            bg_starting = bg + plume_sd_starting * sd(background, na.rm = T),
+            bg_threshold = bg + plume_sd_threshold * sd(background, na.rm = T)
+        ) |>
+        tidyr::pivot_longer(-time) |>
+        dplyr::mutate(name = factor(name,
+            levels = c("conc", "bg", "bg_starting", "bg_threshold"),
+            labels = c("Concentration", "Mean background", "Plume starting point", "Plume threshold")
+        ))
+
+    df |>
+        ggplot2::ggplot(ggplot2::aes(x = time, y = value, colour = name, alpha = name)) +
+        ggplot2::geom_line() +
+        ggplot2::labs(x = xlabel, y = ylabel) +
+        ggplot2::scale_x_datetime(date_labels = date_fmt) +
+        ggplot2::scale_colour_manual("", values = c("gray", "red", "steelblue", "orange")) +
+        ggplot2::scale_alpha_manual("", values = c(bg_alpha, 1, 1, 1)) +
+        ggplot2::theme_minimal()
+}
