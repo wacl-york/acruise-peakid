@@ -40,6 +40,14 @@ detect_plumes <- function(conc,
                           plume_sd_threshold = 3,
                           plume_sd_starting = 2,
                           plume_buffer = 10) {
+    # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
+    if (any(grepl("POSIX", class(time)))) {
+        tz <- attr(time, "tz")
+        if (tz == "") {
+            tz <- "UTC"
+        }
+        time <- nanotime::as.nanotime(strftime(time, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
+    }
     dt <- data.table::data.table(time = time, conc = conc, bg = bg)
     dt[, is_plume_starting := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_starting * sd(bg, na.rm = T))]
     dt[, is_plume := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_threshold * sd(bg, na.rm = T))]
@@ -73,9 +81,16 @@ detect_plumes <- function(conc,
 }
 
 #' @import data.table
-integrate_aup_trapz <- function(conc, times, plumes, dx = 1) {
+integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
+    if (any(grepl("POSIX", class(time)))) {
+        tz <- attr(time, "tz")
+        if (tz == "") {
+            tz <- "UTC"
+        }
+        time <- nanotime::as.nanotime(strftime(time, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
+    }
     # Join plumes into the main concentration so can calculate area by plume
-    dt <- data.table(conc = conc, time = times)
+    dt <- data.table(conc = conc, time = time)
     plumes_dt <- data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
     areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), conc)), by = list(time, time.1, plume_id)]
