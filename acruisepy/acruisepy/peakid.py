@@ -93,6 +93,8 @@ def detect_plumes(
     """
 
     df = pd.DataFrame({"conc": conc, "bg": bg})
+    # Rename index so can reliably refer to it later
+    df.index.rename("index", inplace=True)
 
     # Derive useful values for identifying plumes
     df["is_plume"] = df["conc"] > (df["bg"] + plume_sd_threshold * df["bg"].std())

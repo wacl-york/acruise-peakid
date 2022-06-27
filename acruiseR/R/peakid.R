@@ -41,13 +41,7 @@ detect_plumes <- function(conc,
                           plume_sd_starting = 2,
                           plume_buffer = 10) {
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
-    if (any(grepl("POSIX", class(time)))) {
-        tz <- attr(time, "tz")
-        if (tz == "") {
-            tz <- "UTC"
-        }
-        time <- nanotime::as.nanotime(strftime(time, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
-    }
+    time <- posix_to_nanotime(time)
     dt <- data.table::data.table(time = time, conc = conc, bg = bg)
     dt[, is_plume_starting := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_starting * sd(bg, na.rm = T))]
     dt[, is_plume := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_threshold * sd(bg, na.rm = T))]
@@ -82,13 +76,11 @@ detect_plumes <- function(conc,
 
 #' @import data.table
 integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
-    if (any(grepl("POSIX", class(time)))) {
-        tz <- attr(time, "tz")
-        if (tz == "") {
-            tz <- "UTC"
-        }
-        time <- nanotime::as.nanotime(strftime(time, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
-    }
+    # Ensure both time columns are in the same format. Could stick with both in POSIX
+    # but might as we use nanotime
+    time <- posix_to_nanotime(time)
+    plumes$start <- posix_to_nanotime(plumes$start)
+    plumes$end <- posix_to_nanotime(plumes$end)
     # Join plumes into the main concentration so can calculate area by plume
     dt <- data.table(conc = conc, time = time)
     plumes_dt <- data.table(plumes)
@@ -148,4 +140,15 @@ plot_plumes <- function(conc,
         ggplot2::scale_alpha_manual("", values = c(1, bg_alpha)) +
         ggplot2::guides(colour = "none", alpha = "none") +
         ggplot2::theme_minimal()
+}
+
+posix_to_nanotime <- function(x) {
+    if (any(grepl("POSIX", class(x)))) {
+        tz <- attr(x, "tz")
+        if (tz == "") {
+            tz <- "UTC"
+        }
+        x <- nanotime::as.nanotime(strftime(x, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
+    }
+    x
 }
