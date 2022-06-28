@@ -1,3 +1,24 @@
+#' Identifies background from a concentration time-series.
+#'
+#' This process takes 3 steps:
+#' 1. Obtaining a smoothed rolling standard deviation of the background
+#' 2. Identifying background measurements as those that lie within a set
+#' threshold
+#' 3. Interpolating values outside of this background threshold in a
+#' linear manner and then using a rolling mean so that 'background'
+#' measurements are available for the entire time-series.
+#'
+#' @param concentration Concentration time-series as a vector.
+#' @param bg_sd_window Window size for the rolling standard deviation
+#'       smooth to identify the background, as an integer.
+#' @param bg_sd_threshold Background measurements are considered as
+#'       those whose rolling sd is within this threshold
+#' @param bg_mean_window The rolling mean to smooth the interpolated
+#'       background, as an integer.
+#'
+#' @return A vector with the same length as `concentration` containing the
+#' smoothed background.
+#' @export
 identify_background <- function(concentration,
                                 bg_sd_window = 180,
                                 bg_sd_threshold = 0.5,
@@ -33,7 +54,25 @@ identify_background <- function(concentration,
     RcppRoll::roll_mean(output, n = bg_mean_window, align = "right", fill = NA)
 }
 
+#' Detects plumes in a concentration time series.
+#'
+#' @param conc The concentration time-series as a vector.
+#' @param bg The smoothed background time-series, as can be
+#' obtained from `identify_background`. Must have the same
+#' length as `conc`.
+#' @param plume_sd_threshold The number of standard deviations that a sample
+#' must exceed to be defined as a plume.
+#' @param plume_sd_starting Once a plume has been identified due to it
+#' crossing \code{plume_sd_threshold}, its duration is considered as the
+#' times when it is more than this many standard deviatiations above the
+#' background.
+#' @param plume_buffer A buffer in seconds applied to plumes, so
+#' that if they are overlapping they are merged into the same plume.
+#'
+#' @return A Data Frame where each row corresponds to a unique plume, whose
+#' time boundaries are contained in the 2 columns: `start` and `end`.
 #' @import data.table
+#' @export
 detect_plumes <- function(conc,
                           bg,
                           time,
@@ -74,7 +113,20 @@ detect_plumes <- function(conc,
     as.data.frame(plumes_final)
 }
 
+#' Integrate the Area Under a Plume (aup) using a trapezoidal method.
+#'
+#' @param conc The concentration time-series as a vector with the background
+#' removed.
+#' @param plumes A Data Frame with 'start' and 'end' columns
+#' containing plume boundaries, as returned by `detect_plumes`.
+#' @param dx Sampling period, passed onto the dz argument of
+#' np.trapz. I.e. the time between consecutive measurements.
+#'
+#' @return A Data Frame with one row per plume and 3 columns `start`, `end`, and
+#' `area`. The first 2 are the same as in the input `plumes`, while `area`
+#' contains the integrated area.
 #' @import data.table
+#' @export
 integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
     # Ensure both time columns are in the same format. Could stick with both in POSIX
     # but might as we use nanotime
@@ -93,6 +145,30 @@ integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
     areas
 }
 
+#' Diagnostic plot to aid background extraction
+#'
+#' Plots the concentration time-series highlighting the extracted background
+#' (red), the threshold for what is considered a plume (orange), and when
+#' plumes will be determined to have started at (blue).
+#'
+#' @param conc The concentration time-series as a vector
+#' @param times The sample times corresponding to the concentrations, must have
+#' the same length as \code{conc}.
+#' @param background The background time-series, as obtained
+#' from \code{identify_background}
+#' @param plume_sd_threshold The number of standard deviations that a sample
+#' must exceed to be defined as a plume.
+#' @param plume_sd_starting Once a plume has been identified due to it
+#' crossing \code{plume_sd_threshold}, its duration is considered as the
+#' times when it is more than this many standard deviatiations above the
+#' background.
+#' @param ylabel y-axis label
+#' @param xlabel x-axis label
+#' @param date_fmt Format of the x-axis labels, see \code{date_labels}
+#' argument of \code{ggplot2::scale_x_datetime}.
+#' @param bg_alpha The alpha level of the background concentration.
+#' @return A \code{ggplot2} object, so it can be modified further.
+#' @export
 plot_background <- function(conc,
                             times,
                             background,
@@ -120,6 +196,14 @@ plot_background <- function(conc,
         ggplot2::theme_minimal()
 }
 
+#' Plots plumes against the background concentration.
+#'
+#' @inheritParams plot_background
+#' @param plumes A Data Frame with 'start' and 'end' columns
+#'       containing plume boundaries, as returned by `detect_plumes`
+#'
+#' @return A \code{ggplot2} object, so it can be modified further.
+#' @export
 plot_plumes <- function(conc,
                         times,
                         plumes,
