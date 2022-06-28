@@ -178,6 +178,7 @@ plot_background <- function(conc,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
+    times <- nanotime_to_posix(times) # Can't plot nanotime
     dt <- data.table(conc = conc, time = times, bg = background)
     dt[, bg_starting := bg + plume_sd_starting * sd(bg, na.rm = T)]
     dt[, bg_threshold := bg + plume_sd_threshold * sd(bg, na.rm = T)]
@@ -215,6 +216,7 @@ plot_plumes <- function(conc,
     plumes_dt <- as.data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
     dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), conc, plume_id)]
+    dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
 
     ggplot2::ggplot(dt, ggplot2::aes(x = time, y = conc, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
         ggplot2::geom_line() +
@@ -233,6 +235,14 @@ posix_to_nanotime <- function(x) {
             tz <- "UTC"
         }
         x <- nanotime::as.nanotime(strftime(x, "%Y-%m-%d %H:%M:%OS3"), format = "%Y-%m-%d %H:%M:%ES", tz = tz)
+    }
+    x
+}
+
+nanotime_to_posix <- function(x) {
+    if (any(grepl("nanotime", class(x)))) {
+        tz <- "UTC"
+        x <- as.POSIXct(x, tz = tz)
     }
     x
 }
