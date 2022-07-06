@@ -208,11 +208,27 @@ plot_plumes <- function(concentration,
     dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), concentration, plume_id)]
     dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
 
+    # Manually repeat high contrast colour palette to match number of plumes,
+    # as palette only has 9 values. This mimics matplotlib's behaviour
+    n_plumes <- nrow(plumes_dt)
+    max_set_1 <- 7 # The last colour in the palette is grey, which clashes with background. Remove it.
+    palette <- "Dark2"
+    if (n_plumes <= max_set_1) {
+        colours <- RColorBrewer::brewer.pal(n_plumes, palette)
+    } else {
+        n_repeats <- floor(n_plumes / max_set_1)
+        mod <- max(n_plumes %% max_set_1, 3) # Can't request < 3 colours
+        colours <- c(
+            rep(RColorBrewer::brewer.pal(max_set_1, palette), times = n_repeats),
+            RColorBrewer::brewer.pal(mod, palette)
+        )
+    }
+
     ggplot2::ggplot(dt, ggplot2::aes(x = time, y = concentration, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
         ggplot2::geom_line() +
         ggplot2::labs(x = xlabel, y = ylabel) +
         ggplot2::scale_x_datetime(date_labels = date_fmt) +
-        ggplot2::scale_colour_discrete("") +
+        ggplot2::scale_colour_manual("", values = colours) +
         ggplot2::scale_alpha_manual("", values = c(1, bg_alpha)) +
         ggplot2::guides(colour = "none", alpha = "none") +
         ggplot2::theme_minimal()
