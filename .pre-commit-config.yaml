@@ -12,6 +12,13 @@ repos:
         name: MyPy
         language: python
         additional_dependencies: ["pandas-stubs"]
-        entry: mypy detect_peaks.py
+        entry: mypy acruisepy/acruisepy/peakid.py
         pass_filenames: false
         stages: [commit]
+  - repo: https://github.com/lorenzwalthert/pre-commit-hooks
+    rev: v0.3.1
+    hooks: 
+    -  id: style-files
+       args: [--indent_by=4]
+    -  id: roxygenize
+    -  id: use-tidy-description

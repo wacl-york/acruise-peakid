@@ -6,3 +6,5 @@
 *.txt
 *.csv
 __pycache__
+data/
+*.egg-info
