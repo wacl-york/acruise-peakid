@@ -5,8 +5,8 @@
 \title{Plots plumes against the background concentration.}
 \usage{
 plot_plumes(
-  conc,
-  times,
+  concentration,
+  time,
   plumes,
   ylabel = "Concentration",
   xlabel = "Time (UTC)",
@@ -15,13 +15,13 @@ plot_plumes(
 )
 }
 \arguments{
-\item{conc}{The concentration time-series as a vector}
+\item{concentration}{Concentration time-series as a vector.}
 
-\item{times}{The sample times corresponding to the concentrations, must have
-the same length as \code{conc}.}
+\item{time}{The time-series as a vector of POSIX or nanotime.
+Must have the same length as \code{concentration}.}
 
 \item{plumes}{A Data Frame with 'start' and 'end' columns
-containing plume boundaries, as returned by \code{detect_plumes}}
+containing plume boundaries, as returned by \code{detect_plumes}.}
 
 \item{ylabel}{y-axis label}
 

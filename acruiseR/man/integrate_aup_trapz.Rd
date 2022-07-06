@@ -4,11 +4,13 @@
 \alias{integrate_aup_trapz}
 \title{Integrate the Area Under a Plume (aup) using a trapezoidal method.}
 \usage{
-integrate_aup_trapz(conc, time, plumes, dx = 1)
+integrate_aup_trapz(concentration, time, plumes, dx = 1)
 }
 \arguments{
-\item{conc}{The concentration time-series as a vector with the background
-removed.}
+\item{concentration}{Concentration time-series as a vector.}
+
+\item{time}{The time-series as a vector of POSIX or nanotime.
+Must have the same length as \code{concentration}.}
 
 \item{plumes}{A Data Frame with 'start' and 'end' columns
 containing plume boundaries, as returned by \code{detect_plumes}.}

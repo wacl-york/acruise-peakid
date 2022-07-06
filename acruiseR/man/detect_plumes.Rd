@@ -5,8 +5,8 @@
 \title{Detects plumes in a concentration time series.}
 \usage{
 detect_plumes(
-  conc,
-  bg,
+  concentration,
+  background,
   time,
   plume_sd_threshold = 3,
   plume_sd_starting = 2,
@@ -14,11 +14,14 @@ detect_plumes(
 )
 }
 \arguments{
-\item{conc}{The concentration time-series as a vector.}
+\item{concentration}{Concentration time-series as a vector.}
 
-\item{bg}{The smoothed background time-series, as can be
+\item{background}{The smoothed background time-series, as can be
 obtained from \code{identify_background}. Must have the same
-length as \code{conc}.}
+length as \code{concentration}.}
+
+\item{time}{The time-series as a vector of POSIX or nanotime.
+Must have the same length as \code{concentration}.}
 
 \item{plume_sd_threshold}{The number of standard deviations that a sample
 must exceed to be defined as a plume.}

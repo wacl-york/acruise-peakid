@@ -8,7 +8,7 @@ import matplotlib.dates as mdates
 
 
 def identify_background(
-    conc: pd.Series,
+    concentration: pd.Series,
     bg_sd_window: int = 180,
     bg_sd_threshold: float = 0.5,
     bg_mean_window: int = 660,
@@ -26,7 +26,7 @@ def identify_background(
           measurements are available for the entire time-series.
 
     Args:
-        - conc (pd.Series): Concentration time-series.
+        - concentration (pd.Series): Concentration time-series.
         - bg_sd_window (int): Window size for the rolling standard deviation
           smooth to identify the background.
         - bg_sd_threshold (float): Background measurements are considered as
@@ -40,20 +40,20 @@ def identify_background(
     """
     # Smooth concentration to get smoothed rolling SD
     roll_std = (
-        conc.fillna(method="ffill")
+        concentration.fillna(method="ffill")
         .rolling(bg_sd_window, center=True)
         .std()
         .rolling(bg_sd_window, center=True)
         .mean()
     )
     # Define background as when rolling std deviation is below a threshold
-    is_bg = (~conc.isna()) & (roll_std <= bg_sd_threshold)
+    is_bg = (~concentration.isna()) & (roll_std <= bg_sd_threshold)
     # Interpolate background values when don't have background
     # If want to interpolate everything, so including the NAs introduced by the
     # rolling functions then use limit_direction="both"
     bg = (
-        conc.loc[is_bg]
-        .reindex(conc.index)
+        concentration.loc[is_bg]
+        .reindex(concentration.index)
         .interpolate(limit_area="inside")
         .rolling(bg_mean_window)
         .mean()
@@ -63,8 +63,8 @@ def identify_background(
 
 
 def detect_plumes(
-    conc: pd.Series,
-    bg: pd.Series,
+    concentration: pd.Series,
+    background: pd.Series,
     plume_sd_threshold: float = 3,
     plume_sd_starting: float = 2,
     plume_buffer: float = 10,
@@ -73,11 +73,11 @@ def detect_plumes(
     Detects plumes in a concentration time series.
 
     Args:
-        - conc (pd.Series): The concentration time-series. Should have a
+        - concentration (pd.Series): The concentration time-series. Should have a
             Datetime index.
-        - bg (pd.Series): The smoothed background time-series, as can be
+        - background (pd.Series): The smoothed background time-series, as can be
             obtained from identify_background(). Should have the same
-            Datetime index as conc.
+            Datetime index as concentration.
         - plume_sd_threshold (float): Plumes are identified as samples
             greater than certain number of standard deviations from a
             smoothed background.
@@ -92,14 +92,16 @@ def detect_plumes(
         time boundaries are contained in the 2 columns: `start` and `end`.
     """
 
-    df = pd.DataFrame({"conc": conc, "bg": bg})
+    df = pd.DataFrame({"concentration": concentration, "background": background})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
 
     # Derive useful values for identifying plumes
-    df["is_plume"] = df["conc"] > (df["bg"] + plume_sd_threshold * df["bg"].std())
-    df["is_plume_starting"] = df["conc"] > (
-        df["bg"] + plume_sd_starting * df["bg"].std()
+    df["is_plume"] = df["concentration"] > (
+        df["background"] + plume_sd_threshold * df["background"].std()
+    )
+    df["is_plume_starting"] = df["concentration"] > (
+        df["background"] + plume_sd_starting * df["background"].std()
     )
     df["plume_group_starting"] = (
         df["is_plume_starting"] != df["is_plume_starting"].shift()
@@ -147,13 +149,13 @@ def detect_plumes(
 
 
 def integrate_aup_trapz(
-    conc: pd.Series, plumes: pd.DataFrame, dx: float = 1.0
+    concentration: pd.Series, plumes: pd.DataFrame, dx: float = 1.0
 ) -> pd.DataFrame:
     """
     Integrate the Area Under a Plume (aup) using a trapezoidal method.
 
     Args:
-        - conc (pd.Series): The concentration time-series with the background
+        - concentration (pd.Series): The concentration time-series with the background
           removed. Must have a Datetime index.
         - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
           containing plume boundaries, as returned by detect_plumes()
@@ -172,7 +174,7 @@ def integrate_aup_trapz(
                 {
                     "start": row.start,
                     "end": row.end,
-                    "area": np.trapz(conc.loc[row.start : row.end], dx=dx),
+                    "area": np.trapz(concentration.loc[row.start : row.end], dx=dx),
                 }
             ]
         )
@@ -181,7 +183,7 @@ def integrate_aup_trapz(
 
 
 def plot_background(
-    conc: pd.Series,
+    concentration: pd.Series,
     background: pd.DataFrame,
     plume_sd_threshold: float = 3,
     plume_sd_starting: float = 2,
@@ -196,7 +198,7 @@ def plot_background(
     plumes will be determined to have started at (blue).
 
     Args:
-        - conc (pd.Series): The concentration time-series. Must have a Datetime
+        - concentration (pd.Series): The concentration time-series. Must have a Datetime
             index.
         - background (pd.Series): The background time-series, as obtained
           from identify_background(). Must have a Datetime index.
@@ -219,7 +221,7 @@ def plot_background(
     ax.xaxis.set_major_formatter(myFmt)
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
-    ax.plot(conc, color="gray", alpha=bg_alpha)
+    ax.plot(concentration, color="gray", alpha=bg_alpha)
     ax.plot(background, color="red", label="Mean background")
     ax.plot(
         background + plume_sd_threshold * background.std(),
@@ -236,7 +238,7 @@ def plot_background(
 
 
 def plot_plumes(
-    conc: pd.Series,
+    concentration: pd.Series,
     plumes: pd.DataFrame,
     ylabel: str = "Concentration",
     xlabel: str = "Time (UTC)",
@@ -247,7 +249,7 @@ def plot_plumes(
     Plots plumes against the background concentration.
 
     Args:
-        - conc (pd.Series): The concentration time-series with the background
+        - concentration (pd.Series): The concentration time-series with the background
           removed. Must have a Datetime index.
         - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
           containing plume boundaries, as returned by detect_plumes()
@@ -264,7 +266,7 @@ def plot_plumes(
     ax.xaxis.set_major_formatter(myFmt)
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
-    ax.plot(conc, color="gray", alpha=bg_alpha)
+    ax.plot(concentration, color="gray", alpha=bg_alpha)
     for row in plumes.itertuples():
-        ax.plot(conc.loc[row.start : row.end])
+        ax.plot(concentration.loc[row.start : row.end])
     plt.show()

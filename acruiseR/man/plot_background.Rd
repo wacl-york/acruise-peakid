@@ -5,8 +5,8 @@
 \title{Diagnostic plot to aid background extraction}
 \usage{
 plot_background(
-  conc,
-  times,
+  concentration,
+  time,
   background,
   plume_sd_threshold = 3,
   plume_sd_starting = 2,
@@ -17,13 +17,14 @@ plot_background(
 )
 }
 \arguments{
-\item{conc}{The concentration time-series as a vector}
+\item{concentration}{Concentration time-series as a vector.}
 
-\item{times}{The sample times corresponding to the concentrations, must have
-the same length as \code{conc}.}
+\item{time}{The time-series as a vector of POSIX or nanotime.
+Must have the same length as \code{concentration}.}
 
-\item{background}{The background time-series, as obtained
-from \code{identify_background}}
+\item{background}{The smoothed background time-series, as can be
+obtained from \code{identify_background}. Must have the same
+length as \code{concentration}.}
 
 \item{plume_sd_threshold}{The number of standard deviations that a sample
 must exceed to be defined as a plume.}

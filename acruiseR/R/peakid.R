@@ -56,10 +56,12 @@ identify_background <- function(concentration,
 
 #' Detects plumes in a concentration time series.
 #'
-#' @param conc The concentration time-series as a vector.
-#' @param bg The smoothed background time-series, as can be
+#' @inheritParams identify_background
+#' @param background The smoothed background time-series, as can be
 #' obtained from `identify_background`. Must have the same
-#' length as `conc`.
+#' length as `concentration`.
+#' @param time The time-series as a vector of POSIX or nanotime.
+#' Must have the same length as `concentration`.
 #' @param plume_sd_threshold The number of standard deviations that a sample
 #' must exceed to be defined as a plume.
 #' @param plume_sd_starting Once a plume has been identified due to it
@@ -73,17 +75,17 @@ identify_background <- function(concentration,
 #' time boundaries are contained in the 2 columns: `start` and `end`.
 #' @import data.table
 #' @export
-detect_plumes <- function(conc,
-                          bg,
+detect_plumes <- function(concentration,
+                          background,
                           time,
                           plume_sd_threshold = 3,
                           plume_sd_starting = 2,
                           plume_buffer = 10) {
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
     time <- posix_to_nanotime(time)
-    dt <- data.table::data.table(time = time, conc = conc, bg = bg)
-    dt[, is_plume_starting := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_starting * sd(bg, na.rm = T))]
-    dt[, is_plume := !is.na(conc) & !is.na(bg) & conc > (bg + plume_sd_threshold * sd(bg, na.rm = T))]
+    dt <- data.table::data.table(time = time, concentration = concentration, background = background)
+    dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * sd(background, na.rm = T))]
+    dt[, is_plume := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_threshold * sd(background, na.rm = T))]
     dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill = F, type = "lag")))]
 
     plume_groups_dt <- dt[is_plume_starting == TRUE, list("has_plume" = sum(is_plume), start = min(time), end = max(time)), by = plume_group_starting][has_plume > 0]
@@ -115,8 +117,7 @@ detect_plumes <- function(conc,
 
 #' Integrate the Area Under a Plume (aup) using a trapezoidal method.
 #'
-#' @param conc The concentration time-series as a vector with the background
-#' removed.
+#' @inheritParams detect_plumes
 #' @param plumes A Data Frame with 'start' and 'end' columns
 #' containing plume boundaries, as returned by `detect_plumes`.
 #' @param dx Sampling period, passed onto the dz argument of
@@ -127,17 +128,17 @@ detect_plumes <- function(conc,
 #' contains the integrated area.
 #' @import data.table
 #' @export
-integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
+integrate_aup_trapz <- function(concentration, time, plumes, dx = 1) {
     # Ensure both time columns are in the same format. Could stick with both in POSIX
     # but might as we use nanotime
     time <- posix_to_nanotime(time)
     plumes$start <- posix_to_nanotime(plumes$start)
     plumes$end <- posix_to_nanotime(plumes$end)
     # Join plumes into the main concentration so can calculate area by plume
-    dt <- data.table(conc = conc, time = time)
+    dt <- data.table(concentration = concentration, time = time)
     plumes_dt <- data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
-    areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), conc)), by = list(time, time.1, plume_id)]
+    areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration)), by = list(time, time.1, plume_id)]
 
     areas[, plume_id := NULL]
     setnames(areas, c("time", "time.1"), c("start", "end"))
@@ -151,17 +152,7 @@ integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
 #' (red), the threshold for what is considered a plume (orange), and when
 #' plumes will be determined to have started at (blue).
 #'
-#' @param conc The concentration time-series as a vector
-#' @param times The sample times corresponding to the concentrations, must have
-#' the same length as \code{conc}.
-#' @param background The background time-series, as obtained
-#' from \code{identify_background}
-#' @param plume_sd_threshold The number of standard deviations that a sample
-#' must exceed to be defined as a plume.
-#' @param plume_sd_starting Once a plume has been identified due to it
-#' crossing \code{plume_sd_threshold}, its duration is considered as the
-#' times when it is more than this many standard deviatiations above the
-#' background.
+#' @inheritParams detect_plumes
 #' @param ylabel y-axis label
 #' @param xlabel x-axis label
 #' @param date_fmt Format of the x-axis labels, see \code{date_labels}
@@ -169,8 +160,8 @@ integrate_aup_trapz <- function(conc, time, plumes, dx = 1) {
 #' @param bg_alpha The alpha level of the background concentration.
 #' @return A \code{ggplot2} object, so it can be modified further.
 #' @export
-plot_background <- function(conc,
-                            times,
+plot_background <- function(concentration,
+                            time,
                             background,
                             plume_sd_threshold = 3,
                             plume_sd_starting = 2,
@@ -178,13 +169,13 @@ plot_background <- function(conc,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
-    times <- nanotime_to_posix(times) # Can't plot nanotime
-    dt <- data.table(conc = conc, time = times, bg = background)
+    time <- nanotime_to_posix(time) # Can't plot nanotime
+    dt <- data.table(concentration = concentration, time = time, bg = background)
     dt[, bg_starting := bg + plume_sd_starting * sd(bg, na.rm = T)]
     dt[, bg_threshold := bg + plume_sd_threshold * sd(bg, na.rm = T)]
     dt <- melt(dt, id.vars = "time")
     dt[, variable := factor(variable,
-        levels = c("conc", "bg", "bg_starting", "bg_threshold"),
+        levels = c("concentration", "bg", "bg_starting", "bg_threshold"),
         labels = c("Concentration", "Mean background", "Plume starting point", "Plume threshold")
     )]
 
@@ -199,26 +190,25 @@ plot_background <- function(conc,
 
 #' Plots plumes against the background concentration.
 #'
+#' @inheritParams integrate_aup_trapz
 #' @inheritParams plot_background
-#' @param plumes A Data Frame with 'start' and 'end' columns
-#'       containing plume boundaries, as returned by `detect_plumes`
 #'
 #' @return A \code{ggplot2} object, so it can be modified further.
 #' @export
-plot_plumes <- function(conc,
-                        times,
+plot_plumes <- function(concentration,
+                        time,
                         plumes,
                         ylabel = "Concentration",
                         xlabel = "Time (UTC)",
                         date_fmt = "%H:%M",
                         bg_alpha = 0.5) {
-    dt <- data.table(conc = conc, time = times)
+    dt <- data.table(concentration = concentration, time = time)
     plumes_dt <- as.data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
-    dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), conc, plume_id)]
+    dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), concentration, plume_id)]
     dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
 
-    ggplot2::ggplot(dt, ggplot2::aes(x = time, y = conc, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
+    ggplot2::ggplot(dt, ggplot2::aes(x = time, y = concentration, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
         ggplot2::geom_line() +
         ggplot2::labs(x = xlabel, y = ylabel) +
         ggplot2::scale_x_datetime(date_labels = date_fmt) +
