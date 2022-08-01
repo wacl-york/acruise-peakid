@@ -13,6 +13,8 @@ RoxygenNote: 7.2.0
 Imports:
     dplyr,
     data.table,
+    forecast,
+    mgcv,
     nanotime,
     RColorBrewer,
     RcppRoll
