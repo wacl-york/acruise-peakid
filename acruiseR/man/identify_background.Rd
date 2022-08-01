@@ -6,6 +6,8 @@
 \usage{
 identify_background(
   concentration,
+  method = c("gam", "rolling"),
+  k = 10,
   bg_sd_window = 180,
   bg_sd_threshold = 0.5,
   bg_mean_window = 660
@@ -14,14 +16,32 @@ identify_background(
 \arguments{
 \item{concentration}{Concentration time-series as a vector.}
 
+\item{method}{The background identification method to be employed.
+\itemize{
+\item{\code{gam}: Fits a Generalised Additive Model (gam), which is a non-linear
+regression technique. Requires parameter \code{k} to be tuned.}
+\item{\code{rolling}: The original 2-step rolling average method, which
+firstly fits a rolling standard deviation and then a rolling mean to extract
+the background. Requires parameters \code{bg_sd_window}, \code{bg_sd_threshold},
+and \code{bg_mean_window} to be tuned.}
+}}
+
+\item{k}{The number of spline points in the GAM, a higher number
+should provide a better fit but at the cost of overfitting to
+noise. Used only
+when \code{method='gam'}.}
+
 \item{bg_sd_window}{Window size for the rolling standard deviation
-smooth to identify the background, as an integer.}
+smooth to identify the background, as an integer. Used only
+when \code{method='rolling'}.}
 
 \item{bg_sd_threshold}{Background measurements are considered as
-those whose rolling sd is within this threshold}
+those whose rolling sd is within this threshold
+when \code{method='rolling'}. Used only}
 
 \item{bg_mean_window}{The rolling mean to smooth the interpolated
-background, as an integer.}
+background, as an integer. Used only
+when \code{method='rolling'}.}
 }
 \value{
 A vector with the same length as \code{concentration} containing the

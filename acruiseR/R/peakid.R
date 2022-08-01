@@ -9,49 +9,79 @@
 #' measurements are available for the entire time-series.
 #'
 #' @param concentration Concentration time-series as a vector.
+#' @param method The background identification method to be employed.
+#' \itemize{
+#'     \item{\code{gam}: Fits a Generalised Additive Model (gam), which is a non-linear
+#'     regression technique. Requires parameter \code{k} to be tuned.}
+#'     \item{\code{rolling}: The original 2-step rolling average method, which
+#'     firstly fits a rolling standard deviation and then a rolling mean to extract
+#'     the background. Requires parameters \code{bg_sd_window}, \code{bg_sd_threshold},
+#'     and \code{bg_mean_window} to be tuned.}
+#' }
+#' @param k The number of spline points in the GAM, a higher number
+#'       should provide a better fit but at the cost of overfitting to
+#'       noise. Used only
+#'       when \code{method='gam'}.
 #' @param bg_sd_window Window size for the rolling standard deviation
-#'       smooth to identify the background, as an integer.
+#'       smooth to identify the background, as an integer. Used only
+#'       when \code{method='rolling'}.
 #' @param bg_sd_threshold Background measurements are considered as
 #'       those whose rolling sd is within this threshold
+#'       when \code{method='rolling'}. Used only
 #' @param bg_mean_window The rolling mean to smooth the interpolated
-#'       background, as an integer.
+#'       background, as an integer. Used only
+#'       when \code{method='rolling'}.
 #'
 #' @return A vector with the same length as `concentration` containing the
 #' smoothed background.
 #' @export
 identify_background <- function(concentration,
+                                method = c("gam", "rolling"),
+                                k = 10,
                                 bg_sd_window = 180,
                                 bg_sd_threshold = 0.5,
                                 bg_mean_window = 660) {
-    # Smooth concentration to identify background values (low SD threshold)
-    bg <- RcppRoll::roll_sd(data.table::nafill(concentration, type = "locf"),
-        n = bg_sd_window,
-        align = "center",
-        fill = NA
-    )
-    # With even windows there is a non-even number of NAs around the output
-    # Pandas the extra NA to the start, R places it at the end
-    # This line make R consistent with pandas
-    if (bg_sd_window %% 2 == 0) {
-        bg <- c(NA, bg[1:length(bg) - 1])
-    }
-    # Average
-    bg <- RcppRoll::roll_mean(bg, n = bg_sd_window, align = "center", fill = NA)
-    # Again move surplus NA to start
-    if (bg_sd_window %% 2 == 0) {
-        bg <- c(NA, bg[1:length(bg) - 1])
-    }
+    method <- match.arg(method)
+    if (method == "rolling") {
+        # Smooth concentration to identify background values (low SD threshold)
+        bg <- RcppRoll::roll_sd(data.table::nafill(concentration, type = "locf"),
+            n = bg_sd_window,
+            align = "center",
+            fill = NA
+        )
+        # With even windows there is a non-even number of NAs around the output
+        # Pandas the extra NA to the start, R places it at the end
+        # This line make R consistent with pandas
+        if (bg_sd_window %% 2 == 0) {
+            bg <- c(NA, bg[1:length(bg) - 1])
+        }
+        # Average
+        bg <- RcppRoll::roll_mean(bg, n = bg_sd_window, align = "center", fill = NA)
+        # Again move surplus NA to start
+        if (bg_sd_window %% 2 == 0) {
+            bg <- c(NA, bg[1:length(bg) - 1])
+        }
 
-    is_bg <- !is.na(concentration) & !is.na(bg) & bg <= bg_sd_threshold
+        is_bg <- !is.na(concentration) & !is.na(bg) & bg <= bg_sd_threshold
 
-    # Now take the original raw concentration and linearly interpolate any non-background
-    # values, and then take a final smooth
-    output <- rep(NA, length(concentration))
-    output[is_bg] <- concentration[is_bg]
-    # If want to interpolate everything, so including the NAs introduced by the
-    # rolling functions then use rule=2
-    output[!is_bg] <- approx(output, xout = which(!is_bg), rule = 1)$y
-    RcppRoll::roll_mean(output, n = bg_mean_window, align = "right", fill = NA)
+        # Now take the original raw concentration and linearly interpolate any non-background
+        # values, and then take a final smooth
+        output <- rep(NA, length(concentration))
+        output[is_bg] <- concentration[is_bg]
+        # If want to interpolate everything, so including the NAs introduced by the
+        # rolling functions then use rule=2
+        output[!is_bg] <- approx(output, xout = which(!is_bg), rule = 1)$y
+        bg_out <- RcppRoll::roll_mean(output, n = bg_mean_window, align = "right", fill = NA)
+    } else if (method == "gam") {
+        # Interpolate missing values, unlike the first method that uses LastOneCarryForward
+        conc <- forecast::na.interp(conc)
+        x <- seq_along(conc)
+
+        # Fit baseline
+        mod <- mgcv::gam(conc ~ s(x, bs = "cs", k = k), method = "REML", select = TRUE)
+        bg_out <- mod$fitted.values
+    }
+    bg_out
 }
 
 #' Detects plumes in a concentration time series.
@@ -83,9 +113,10 @@ detect_plumes <- function(concentration,
                           plume_buffer = 10) {
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
     time <- posix_to_nanotime(time)
+    residual_sd <- sd(concentration - background, na.rm = T)
     dt <- data.table::data.table(time = time, concentration = concentration, background = background)
-    dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * sd(background, na.rm = T))]
-    dt[, is_plume := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_threshold * sd(background, na.rm = T))]
+    dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * residual_sd)]
+    dt[, is_plume := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_threshold * residual_sd)]
     dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill = F, type = "lag")))]
 
     plume_groups_dt <- dt[is_plume_starting == TRUE, list("has_plume" = sum(is_plume), start = min(time), end = max(time)), by = plume_group_starting][has_plume > 0]
@@ -171,8 +202,9 @@ plot_background <- function(concentration,
                             bg_alpha = 0.5) {
     time <- nanotime_to_posix(time) # Can't plot nanotime
     dt <- data.table(concentration = concentration, time = time, bg = background)
-    dt[, bg_starting := bg + plume_sd_starting * sd(bg, na.rm = T)]
-    dt[, bg_threshold := bg + plume_sd_threshold * sd(bg, na.rm = T)]
+    sd_residual <- sd(concentration - background, na.rm = T)
+    dt[, bg_starting := bg + plume_sd_starting * sd_residual]
+    dt[, bg_threshold := bg + plume_sd_threshold * sd_residual]
     dt <- melt(dt, id.vars = "time")
     dt[, variable := factor(variable,
         levels = c("concentration", "bg", "bg_starting", "bg_threshold"),
