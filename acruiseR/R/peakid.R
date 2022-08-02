@@ -74,11 +74,11 @@ identify_background <- function(concentration,
         bg_out <- RcppRoll::roll_mean(output, n = bg_mean_window, align = "right", fill = NA)
     } else if (method == "gam") {
         # Interpolate missing values, unlike the first method that uses LastOneCarryForward
-        conc <- forecast::na.interp(conc)
-        x <- seq_along(conc)
+        concentration <- forecast::na.interp(concentration)
+        x <- seq_along(concentration)
 
         # Fit baseline
-        mod <- mgcv::gam(conc ~ s(x, bs = "cs", k = k), method = "REML", select = TRUE)
+        mod <- mgcv::gam(concentration ~ s(x, bs = "cs", k = k), method = "REML", select = TRUE)
         bg_out <- mod$fitted.values
     }
     bg_out
