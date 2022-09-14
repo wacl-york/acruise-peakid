@@ -22,16 +22,15 @@ plot_background(
 \item{time}{The time-series as a vector of POSIX or nanotime.
 Must have the same length as \code{concentration}.}
 
-\item{background}{The smoothed background time-series, as can be
-obtained from \code{identify_background}. Must have the same
-length as \code{concentration}.}
+\item{background}{The smoothed background time-series object, as can be
+obtained from \code{identify_background}}
 
 \item{plume_sd_threshold}{The number of standard deviations that a sample
 must exceed to be defined as a plume.}
 
 \item{plume_sd_starting}{Once a plume has been identified due to it
 crossing \code{plume_sd_threshold}, its duration is considered as the
-times when it is more than this many standard deviatiations above the
+times when it is more than this many standard deviations above the
 background.}
 
 \item{ylabel}{y-axis label}
