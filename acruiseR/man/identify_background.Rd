@@ -44,8 +44,9 @@ background, as an integer. Used only
 when \code{method='rolling'}.}
 }
 \value{
-A vector with the same length as \code{concentration} containing the
-smoothed background.
+A list containing the background (slot \code{bg}) which is
+a vector with the same length as \code{concentration}, and the arguments
+used in this call (slot \code{call}).
 }
 \description{
 This process takes 3 steps:

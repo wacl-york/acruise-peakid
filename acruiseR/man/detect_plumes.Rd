@@ -10,15 +10,15 @@ detect_plumes(
   time,
   plume_sd_threshold = 3,
   plume_sd_starting = 2,
-  plume_buffer = 10
+  plume_buffer = 10,
+  refit = FALSE
 )
 }
 \arguments{
 \item{concentration}{Concentration time-series as a vector.}
 
-\item{background}{The smoothed background time-series, as can be
-obtained from \code{identify_background}. Must have the same
-length as \code{concentration}.}
+\item{background}{The smoothed background time-series object, as can be
+obtained from \code{identify_background}}
 
 \item{time}{The time-series as a vector of POSIX or nanotime.
 Must have the same length as \code{concentration}.}
@@ -28,11 +28,15 @@ must exceed to be defined as a plume.}
 
 \item{plume_sd_starting}{Once a plume has been identified due to it
 crossing \code{plume_sd_threshold}, its duration is considered as the
-times when it is more than this many standard deviatiations above the
+times when it is more than this many standard deviations above the
 background.}
 
 \item{plume_buffer}{A buffer in seconds applied to plumes, so
 that if they are overlapping they are merged into the same plume.}
+
+\item{refit}{If TRUE, removes the identified plumes from the time-series
+to recalculate the background, then re-identifies plumes. Should result in
+a smoother background and therefore more accurate plume estimation.}
 }
 \value{
 A Data Frame where each row corresponds to a unique plume, whose

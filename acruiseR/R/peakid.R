@@ -32,8 +32,9 @@
 #'       background, as an integer. Used only
 #'       when \code{method='rolling'}.
 #'
-#' @return A vector with the same length as `concentration` containing the
-#' smoothed background.
+#' @return A list containing the background (slot `bg`) which is
+#' a vector with the same length as `concentration`, and the arguments
+#' used in this call (slot `call`).
 #' @export
 identify_background <- function(concentration,
                                 method = c("gam", "rolling"),
@@ -81,25 +82,34 @@ identify_background <- function(concentration,
         mod <- mgcv::gam(concentration ~ s(x, bs = "cs", k = k), method = "REML", select = TRUE)
         bg_out <- mod$fitted.values
     }
-    bg_out
+    out <- list(
+        bg = bg_out,
+        call = list(
+            method = method, k = k, bg_sd_window = bg_sd_window,
+            bg_sd_threshold = bg_sd_threshold, bg_mean_window = bg_mean_window
+        )
+    )
+    out
 }
 
 #' Detects plumes in a concentration time series.
 #'
 #' @inheritParams identify_background
-#' @param background The smoothed background time-series, as can be
-#' obtained from `identify_background`. Must have the same
-#' length as `concentration`.
+#' @param background The smoothed background time-series object, as can be
+#' obtained from `identify_background`
 #' @param time The time-series as a vector of POSIX or nanotime.
 #' Must have the same length as `concentration`.
 #' @param plume_sd_threshold The number of standard deviations that a sample
 #' must exceed to be defined as a plume.
 #' @param plume_sd_starting Once a plume has been identified due to it
 #' crossing \code{plume_sd_threshold}, its duration is considered as the
-#' times when it is more than this many standard deviatiations above the
+#' times when it is more than this many standard deviations above the
 #' background.
 #' @param plume_buffer A buffer in seconds applied to plumes, so
 #' that if they are overlapping they are merged into the same plume.
+#' @param refit If TRUE, removes the identified plumes from the time-series
+#' to recalculate the background, then re-identifies plumes. Should result in
+#' a smoother background and therefore more accurate plume estimation.
 #'
 #' @return A Data Frame where each row corresponds to a unique plume, whose
 #' time boundaries are contained in the 2 columns: `start` and `end`.
@@ -110,11 +120,13 @@ detect_plumes <- function(concentration,
                           time,
                           plume_sd_threshold = 3,
                           plume_sd_starting = 2,
-                          plume_buffer = 10) {
+                          plume_buffer = 10,
+                          refit = FALSE) {
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
+    bg <- background$bg
     time <- posix_to_nanotime(time)
-    residual_sd <- sd(concentration - background, na.rm = T)
-    dt <- data.table::data.table(time = time, concentration = concentration, background = background)
+    residual_sd <- sd(concentration - bg, na.rm = T)
+    dt <- data.table::data.table(time = time, concentration = concentration, background = bg)
     dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * residual_sd)]
     dt[, is_plume := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_threshold * residual_sd)]
     dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill = F, type = "lag")))]
@@ -143,7 +155,27 @@ detect_plumes <- function(concentration,
     # Then add on baseline and convert back to datetime
     plumes_final[, combined_plume := NULL]
     setorder(plumes_final, start)
-    as.data.frame(plumes_final)
+    out <- as.data.frame(plumes_final)
+
+    if (refit) {
+        # Remove plumes and reidentify background
+        plumes_final[, in_plume := TRUE]
+        plumes_removed <- plumes_final[dt, on = c("start <= time", "end >= time"), .(time, concentration, background, in_plume)]
+        plumes_removed[in_plume == TRUE, concentration := NA]
+        args <- c(list(concentration = plumes_removed$concentration), background$call)
+        bg_new <- do.call(identify_background, args)
+
+        # Redetect plumes with new background
+        out <- detect_plumes(concentration,
+            bg_new,
+            time,
+            plume_sd_threshold = plume_sd_threshold,
+            plume_sd_starting = plume_sd_starting,
+            plume_buffer = plume_buffer,
+            refit = FALSE
+        )
+    }
+    out
 }
 
 #' Integrate the Area Under a Plume (aup) using a trapezoidal method.
@@ -200,6 +232,7 @@ plot_background <- function(concentration,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
+    background <- background$bg
     time <- nanotime_to_posix(time) # Can't plot nanotime
     dt <- data.table(concentration = concentration, time = time, bg = background)
     sd_residual <- sd(concentration - background, na.rm = T)
