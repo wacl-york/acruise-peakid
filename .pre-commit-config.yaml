@@ -6,15 +6,6 @@ repos:
         name: Black styler
         language_version: python3.10
         stages: [commit]
-  - repo: local
-    hooks:
-      - id: mypy
-        name: MyPy
-        language: python
-        additional_dependencies: ["pandas-stubs"]
-        entry: mypy acruisepy/acruisepy/peakid.py
-        pass_filenames: false
-        stages: [commit]
   - repo: https://github.com/lorenzwalthert/pre-commit-hooks
     rev: v0.3.1
     hooks: 

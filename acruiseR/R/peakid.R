@@ -185,13 +185,17 @@ detect_plumes <- function(concentration,
 #' containing plume boundaries, as returned by `detect_plumes`.
 #' @param dx Sampling period, passed onto the dz argument of
 #' np.trapz. I.e. the time between consecutive measurements.
+#' @param uncertainty Instrument uncertainty as a decimal (i.e. 5% is 0.05).
+#' If provided then corresponding uncertainty estimates are also provided, if
+#' `NULL` then these are omitted.
 #'
 #' @return A Data Frame with one row per plume and 3 columns `start`, `end`, and
-#' `area`. The first 2 are the same as in the input `plumes`, while `area`
+#' `area`, and an additional `uncertainty` column if the `uncertainty` parameter is
+#' not `NULL`. The first 2 columns are the same as in the input `plumes`, while `area`
 #' contains the integrated area.
 #' @import data.table
 #' @export
-integrate_aup_trapz <- function(concentration, time, plumes, dx = 1) {
+integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty = 0.05) {
     # Ensure both time columns are in the same format. Could stick with both in POSIX
     # but might as we use nanotime
     time <- posix_to_nanotime(time)
@@ -201,7 +205,15 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1) {
     dt <- data.table(concentration = concentration, time = time)
     plumes_dt <- data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
-    areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration)), by = list(time, time.1, plume_id)]
+
+    areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration), concentration), by = list(time, time.1, plume_id)]
+
+    if (!is.null(uncertainty)) {
+        h2_2 <- (dx / 2)**2
+        areas[, delta := h2_2 * (uncertainty * concentration)**2]
+        # For each consecutive point within a plume, take the Sqrt of the sum of each point's uncertainty
+        areas <- areas[, .(area = mean(area, na.rm = T), uncertainty = sum(sqrt(delta + lag(delta)), na.rm = T)), by = .(time, time.1, plume_id)]
+    }
 
     areas[, plume_id := NULL]
     setnames(areas, c("time", "time.1"), c("start", "end"))
