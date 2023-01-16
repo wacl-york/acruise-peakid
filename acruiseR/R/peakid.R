@@ -195,7 +195,9 @@ detect_plumes <- function(concentration,
 #' contains the integrated area.
 #' @import data.table
 #' @export
-integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty = 0.05) {
+integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty = NULL,
+                                uncertainty_type = c("absolute", "relative")) {
+    uncertainty_type <- match.arg(uncertainty_type)
     # Ensure both time columns are in the same format. Could stick with both in POSIX
     # but might as we use nanotime
     time <- posix_to_nanotime(time)
@@ -210,7 +212,11 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty
 
     if (!is.null(uncertainty)) {
         h2_2 <- (dx / 2)**2
-        areas[, delta := h2_2 * (uncertainty * concentration)**2]
+        if (uncertainty_type == "relative") {
+            areas[, delta := h2_2 * (uncertainty * concentration)**2]
+        } else if (uncertainty_type == "absolute") {
+            areas[, delta := h2_2 * (uncertainty)**2]
+        }
         # For each consecutive point within a plume, take the Sqrt of the sum of each point's uncertainty
         areas <- areas[, .(area = mean(area, na.rm = T), uncertainty = sum(sqrt(delta + lag(delta)), na.rm = T)), by = .(time, time.1, plume_id)]
     }
