@@ -7,37 +7,31 @@ R and Python functions for identifying peaks from measurements taken from ACRUIS
 The workflow of the peak extraction comprises 3 steps:
 
   1. Identify the background from the concentration time-series
-  2. Remove the background and identify the peaks
+  2. Identify the peaks by substracting the background
   3. Integrate the area under the peaks to determine the corresponding concentration
+
+Typically steps 1 and 2 are iterated until the detected peaks give an acceptable subjective visual classification.
   
 The following sections provide a few additional details.
 
 ### Background identification
 
-The observed time-series `y(t)` is assumed to comprise a background concentration $b(t)$ with irregular, sparse plumes $p(t)$:
-
-$$y(t) = b(t) + p(t)$$
-
-The background is assumed to be distributed normally with a time-varying mean but a constant variance, leading to the model
+The observed time-series $y(t)$ is assumed to comprise a background concentration $b(t)$ with irregular, sparse plumes $p(t)$ with background noise having constant variance $\epsilon \sim N(0, \sigma)$:
 
 $$y(t) = b(t) + p(t) + \epsilon(t)$$
 
-Where
+The background is estimated using either a Generalized Additive Model (R only for now), or a rolling window approach (both R and Python), giving $\hat{b}(t)$.
 
-$$\epsilon \sim N(0, \sigma)$$
+### Plume identification
 
-The aim of the background identification is to fit a model for `b(t)`, the time-varying mean background. 
+Subtracting $\hat{b}(t)$ from $y(t)$ results in the signal comprising the normally distributed noise and the irregular plumes, from which the noise variance is estimated as the standard deviation ($\hat{\sigma}$)
 
-## Plume identification
-
-Subtracting the estimated mean background (`b(t)`) from the measured data results in the observations comprising the normally distributed background variance, and the irregular plumes.
-
-$$y'(t) = p(t) + \epsilon(t)$$
-
-The plumes are then identified as any timepoints where $y'(t) \geq k\times\text{sd}(y'(t))$, where $k$ is a user-chosen parameter (`plume_sd_threshold`).
+Plumes are then identified as any timepoints where $y(t) \geq \hat{b}(t) + k \hat{\sigma}$, where $k$ is a user-chosen parameter (`plume_sd_threshold`).
 This threshold will usually be at least 3, so if plumes were exclusively defined by this criteria then they would exclude some points between $p(t)$ and $k$ standard deviations.
 Instead, for each plume identified by the above criteria, it is then expanded to include points up to $j$ standard deviations away from $p(t)$, where $k > j$. 
 The default value for $j$ is 1 and is specified in the code as `plume_sd_starting`.
+
+Plumes that are close together can be combined by using the `plume_buffer` parameter, which combines plumes if they are within `plume_buffer` timepoints.
 
 ### Integrating peaks
 
