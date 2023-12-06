@@ -250,6 +250,7 @@ plot_background <- function(concentration,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
+    .Deprecated("plot_plumes")
     background <- background$bg
     time <- nanotime_to_posix(time) # Can't plot nanotime
     dt <- data.table(concentration = concentration, time = time, bg = background)
@@ -280,23 +281,48 @@ plot_background <- function(concentration,
 #' @export
 plot_plumes <- function(concentration,
                         time,
-                        plumes,
+                        plumes=NULL,
+                        background=NULL,
                         ylabel = "Concentration",
                         xlabel = "Time (UTC)",
                         date_fmt = "%H:%M",
+                        plume_sd_threshold = 3,
+                        plume_sd_starting = 2,
                         bg_alpha = 0.5) {
     dt <- data.table(concentration = concentration, time = time)
+
+    if (!is.null(background)) {
+        bg <- background$bg
+        sd_residual <- sd(concentration - bg, na.rm = T)
+        dt[, c('bg', 'bg_starting', 'bg_threshold') := list(bg,
+                                                         bg + plume_sd_starting * sd_residual,
+                                                         bg + plume_sd_threshold * sd_residual
+        )]
+    }
+
+    # Create empty plumes if not provided, just makes plotting easier
+    if (is.null(plumes)) {
+        plumes <- data.table(start = nanotime(), end = nanotime())
+    }
+
     plumes_dt <- as.data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
-    dt <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(time = as.POSIXct(time), concentration, plume_id)]
-    dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
+    dt <- plumes_dt[dt, on = c("start <= time", "end >= time")]
+    dt[, c('plume_id', 'is_plume') := .(as.factor(plume_id),
+                                        factor(is.na(plume_id),
+                                               levels=c(FALSE, TRUE)))]
 
     # Manually repeat high contrast colour palette to match number of plumes,
     # as palette only has 9 values. This mimics matplotlib's behaviour
     n_plumes <- nrow(plumes_dt)
-    max_set_1 <- 7 # The last colour in the palette is grey, which clashes with background. Remove it.
+    max_set_1 <- 7 # The 8th (last) colour in the palette is grey, which clashes with background. Remove it.
     palette <- "Dark2"
-    if (n_plumes <= max_set_1) {
+    if (n_plumes == 0) {
+        colours <- c('grey50')
+    } else if (n_plumes < 3) {  # Dark2 needs 3 colours minimum
+        colours <- RColorBrewer::brewer.pal(3, palette)
+        colours <- colours[1:n_plumes]
+    } else if (n_plumes <= max_set_1) {
         colours <- RColorBrewer::brewer.pal(n_plumes, palette)
     } else {
         n_repeats <- floor(n_plumes / max_set_1)
@@ -307,14 +333,23 @@ plot_plumes <- function(concentration,
         )
     }
 
-    ggplot2::ggplot(dt, ggplot2::aes(x = time, y = concentration, colour = as.factor(plume_id), alpha = as.factor(is.na(plume_id)))) +
-        ggplot2::geom_line() +
+    dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
+    p <- ggplot2::ggplot(dt, ggplot2::aes(x = time,
+                                          y = concentration)) +
+        ggplot2::geom_line(aes(colour = plume_id, alpha=is_plume)) +
         ggplot2::labs(x = xlabel, y = ylabel) +
-        ggplot2::scale_x_datetime(date_labels = date_fmt) +
-        ggplot2::scale_colour_manual("", values = colours) +
-        ggplot2::scale_alpha_manual("", values = c(1, bg_alpha)) +
+        ggplot2::scale_x_datetime("", date_labels = date_fmt, timezone = tz(dt$time)) +
         ggplot2::guides(colour = "none", alpha = "none") +
+        ggplot2::scale_colour_manual("", values = colours) +
+        ggplot2::scale_alpha_manual("", values = c(1, bg_alpha), na.value=1) +
         ggplot2::theme_minimal()
+
+    if (!is.null(background)) {
+        p <- p + ggplot2::geom_line(aes(y=bg), colour="red") +
+                 ggplot2::geom_line(aes(y=bg_starting), colour="steelblue") +
+                 ggplot2::geom_line(aes(y=bg_threshold), colour="orange")
+    }
+    p
 }
 
 posix_to_nanotime <- function(x) {
