@@ -292,6 +292,19 @@ plot_plumes <- function(concentration,
                         bg_alpha = 0.5) {
     dt <- data.table(concentration = concentration, time = time)
 
+    # Create empty plumes if not provided, just makes plotting easier
+    if (is.null(plumes)) {
+        plumes <- data.table(start = nanotime(), end = nanotime())
+    }
+    plumes_dt <- as.data.table(plumes)
+    plumes_dt[, plume_id := 1:nrow(plumes_dt)]
+    dt <- plumes_dt[dt, on = c("start <= time", "end >= time"),
+                    .(time, plume_id, concentration)]
+    setorder(dt, time)  # Shouldn't be needed but best to do
+    dt[, c('plume_id', 'is_plume') := .(as.factor(plume_id),
+                                        factor(is.na(plume_id),
+                                               levels=c(FALSE, TRUE)))]
+
     if (!is.null(background)) {
         bg <- background$bg
         sd_residual <- sd(concentration - bg, na.rm = T)
@@ -300,19 +313,6 @@ plot_plumes <- function(concentration,
                                                          bg + plume_sd_threshold * sd_residual
         )]
     }
-
-    # Create empty plumes if not provided, just makes plotting easier
-    if (is.null(plumes)) {
-        plumes <- data.table(start = nanotime(), end = nanotime())
-    }
-
-    plumes_dt <- as.data.table(plumes)
-    plumes_dt[, plume_id := 1:nrow(plumes_dt)]
-    dt <- plumes_dt[dt, on = c("start <= time", "end >= time")]
-    setorder(dt, time)
-    dt[, c('plume_id', 'is_plume') := .(as.factor(plume_id),
-                                        factor(is.na(plume_id),
-                                               levels=c(FALSE, TRUE)))]
 
     # Manually repeat high contrast colour palette to match number of plumes,
     # as palette only has 9 values. This mimics matplotlib's behaviour
