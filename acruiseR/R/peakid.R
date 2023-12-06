@@ -319,11 +319,14 @@ plot_plumes <- function(concentration,
     palette <- "Dark2"
     if (n_plumes == 0) {
         colours <- c('grey50')
+        alphas <- bg_alpha
     } else if (n_plumes < 3) {  # Dark2 needs 3 colours minimum
         colours <- RColorBrewer::brewer.pal(3, palette)
         colours <- colours[1:n_plumes]
+        alphas <- c(1, bg_alpha)
     } else if (n_plumes <= max_set_1) {
         colours <- RColorBrewer::brewer.pal(n_plumes, palette)
+        alphas <- c(1, bg_alpha)
     } else {
         n_repeats <- floor(n_plumes / max_set_1)
         mod <- max(n_plumes %% max_set_1, 3) # Can't request < 3 colours
@@ -331,6 +334,7 @@ plot_plumes <- function(concentration,
             rep(RColorBrewer::brewer.pal(max_set_1, palette), times = n_repeats),
             RColorBrewer::brewer.pal(mod, palette)
         )
+        alphas <- c(1, bg_alpha)
     }
 
     dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
@@ -341,7 +345,7 @@ plot_plumes <- function(concentration,
         ggplot2::scale_x_datetime("", date_labels = date_fmt, timezone = tz(dt$time)) +
         ggplot2::guides(colour = "none", alpha = "none") +
         ggplot2::scale_colour_manual("", values = colours) +
-        ggplot2::scale_alpha_manual("", values = c(1, bg_alpha), na.value=1) +
+        ggplot2::scale_alpha_manual("", values = alphas) +
         ggplot2::theme_minimal()
 
     if (!is.null(background)) {
