@@ -127,6 +127,7 @@ detect_plumes <- function(concentration,
     time <- posix_to_nanotime(time)
     residual_sd <- sd(concentration - bg, na.rm = T)
     dt <- data.table::data.table(time = time, concentration = concentration, background = bg)
+    setorder(dt, time)
     dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * residual_sd)]
     dt[, is_plume := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_threshold * residual_sd)]
     dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill = F, type = "lag")))]
@@ -308,6 +309,7 @@ plot_plumes <- function(concentration,
     plumes_dt <- as.data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
     dt <- plumes_dt[dt, on = c("start <= time", "end >= time")]
+    setorder(dt, time)
     dt[, c('plume_id', 'is_plume') := .(as.factor(plume_id),
                                         factor(is.na(plume_id),
                                                levels=c(FALSE, TRUE)))]
