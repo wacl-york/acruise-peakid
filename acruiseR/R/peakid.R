@@ -264,7 +264,7 @@ plot_background <- function(concentration,
     )]
 
     ggplot2::ggplot(dt, ggplot2::aes(x = time, y = value, colour = variable, alpha = variable)) +
-        ggplot2::geom_line() +
+        ggplot2::geom_line(na.rm=TRUE) +
         ggplot2::labs(x = xlabel, y = ylabel) +
         ggplot2::scale_x_datetime(date_labels = date_fmt) +
         ggplot2::scale_colour_manual("", values = c("gray", "red", "steelblue", "orange")) +
@@ -340,7 +340,7 @@ plot_plumes <- function(concentration,
     dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
     p <- ggplot2::ggplot(dt, ggplot2::aes(x = time,
                                           y = concentration)) +
-        ggplot2::geom_line(aes(colour = plume_id, alpha=is_plume)) +
+        ggplot2::geom_line(ggplot2::aes(colour = plume_id, alpha=is_plume), na.rm=TRUE) +
         ggplot2::labs(x = xlabel, y = ylabel) +
         ggplot2::scale_x_datetime("", date_labels = date_fmt, timezone = tz(dt$time)) +
         ggplot2::guides(colour = "none", alpha = "none") +
@@ -349,9 +349,9 @@ plot_plumes <- function(concentration,
         ggplot2::theme_minimal()
 
     if (!is.null(background)) {
-        p <- p + ggplot2::geom_line(aes(y=bg), colour="red") +
-                 ggplot2::geom_line(aes(y=bg_starting), colour="steelblue") +
-                 ggplot2::geom_line(aes(y=bg_threshold), colour="orange")
+        p <- p + ggplot2::geom_line(aes(y=bg), colour="red", na.rm=TRUE) +
+                 ggplot2::geom_line(aes(y=bg_starting), colour="steelblue", na.rm=TRUE) +
+                 ggplot2::geom_line(aes(y=bg_threshold), colour="orange", na.rm=TRUE)
     }
     p
 }
