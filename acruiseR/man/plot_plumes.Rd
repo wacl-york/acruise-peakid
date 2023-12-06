@@ -7,10 +7,13 @@
 plot_plumes(
   concentration,
   time,
-  plumes,
+  plumes = NULL,
+  background = NULL,
   ylabel = "Concentration",
   xlabel = "Time (UTC)",
   date_fmt = "\%H:\%M",
+  plume_sd_threshold = 3,
+  plume_sd_starting = 2,
   bg_alpha = 0.5
 )
 }
@@ -23,12 +26,23 @@ Must have the same length as \code{concentration}.}
 \item{plumes}{A Data Frame with 'start' and 'end' columns
 containing plume boundaries, as returned by \code{detect_plumes}.}
 
+\item{background}{The smoothed background time-series object, as can be
+obtained from \code{identify_background}}
+
 \item{ylabel}{y-axis label}
 
 \item{xlabel}{x-axis label}
 
 \item{date_fmt}{Format of the x-axis labels, see \code{date_labels}
 argument of \code{ggplot2::scale_x_datetime}.}
+
+\item{plume_sd_threshold}{The number of standard deviations that a sample
+must exceed to be defined as a plume.}
+
+\item{plume_sd_starting}{Once a plume has been identified due to it
+crossing \code{plume_sd_threshold}, its duration is considered as the
+times when it is more than this many standard deviations above the
+background.}
 
 \item{bg_alpha}{The alpha level of the background concentration.}
 }

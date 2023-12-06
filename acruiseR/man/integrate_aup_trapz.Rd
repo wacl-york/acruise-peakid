@@ -4,7 +4,14 @@
 \alias{integrate_aup_trapz}
 \title{Integrate the Area Under a Plume (aup) using a trapezoidal method.}
 \usage{
-integrate_aup_trapz(concentration, time, plumes, dx = 1)
+integrate_aup_trapz(
+  concentration,
+  time,
+  plumes,
+  dx = 1,
+  uncertainty = NULL,
+  uncertainty_type = c("absolute", "relative")
+)
 }
 \arguments{
 \item{concentration}{Concentration time-series as a vector.}
@@ -17,10 +24,15 @@ containing plume boundaries, as returned by \code{detect_plumes}.}
 
 \item{dx}{Sampling period, passed onto the dz argument of
 np.trapz. I.e. the time between consecutive measurements.}
+
+\item{uncertainty}{Instrument uncertainty as a decimal (i.e. 5\% is 0.05).
+If provided then corresponding uncertainty estimates are also provided, if
+\code{NULL} then these are omitted.}
 }
 \value{
 A Data Frame with one row per plume and 3 columns \code{start}, \code{end}, and
-\code{area}. The first 2 are the same as in the input \code{plumes}, while \code{area}
+\code{area}, and an additional \code{uncertainty} column if the \code{uncertainty} parameter is
+not \code{NULL}. The first 2 columns are the same as in the input \code{plumes}, while \code{area}
 contains the integrated area.
 }
 \description{
