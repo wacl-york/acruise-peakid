@@ -123,8 +123,10 @@ detect_plumes <- function(concentration,
                           plume_buffer = 10,
                           refit = FALSE) {
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
-    bg <- background$bg
     time <- posix_to_nanotime(time)
+
+    # First pass at identifying plumes
+    bg <- background$bg
     residual_sd <- sd(concentration - bg, na.rm = T)
     dt <- data.table::data.table(time = time, concentration = concentration, background = bg)
     setorder(dt, time)
@@ -133,15 +135,17 @@ detect_plumes <- function(concentration,
     dt[, plume_group_starting := cumsum((is_plume_starting != data.table::shift(is_plume_starting, fill = F, type = "lag")))]
 
     plume_groups_dt <- dt[is_plume_starting == TRUE, list("has_plume" = sum(is_plume), start = min(time), end = max(time)), by = plume_group_starting][has_plume > 0]
+    if (nrow(plume_groups_dt) == 0) {
+        return(data.table(start=nanotime(), end=nanotime()))
+    }
 
-    # Find overlapping plumes within the buffer
+    # Find overlapping plumes within the buffer period
     setkey(plume_groups_dt, start, end)
     overlaps <- foverlaps(plume_groups_dt,
         plume_groups_dt[, .(start, end = end + nanotime::nanoduration(hours = 0, minutes = 0, seconds = plume_buffer, nanoseconds = 0))],
         type = "any",
         which = TRUE
     )
-
     overlaps[, c("x_prev_seen", "y_prev_seen") := list(duplicated(xid), duplicated(yid))]
     overlaps[, combined_plume := cumsum(!(x_prev_seen | y_prev_seen))]
     # Find group for each row number
@@ -153,7 +157,8 @@ detect_plumes <- function(concentration,
     ),
     by = combined_plume
     ]
-    # Then add on baseline and convert back to datetime
+
+    # Format for output
     plumes_final[, combined_plume := NULL]
     setorder(plumes_final, start)
     out <- as.data.frame(plumes_final)
