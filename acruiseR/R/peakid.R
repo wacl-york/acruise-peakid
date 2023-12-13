@@ -348,6 +348,9 @@ plot_plumes <- function(concentration,
     }
 
     dt[, time := nanotime_to_posix(time)] # Can't plot nanotime
+    # Only want to plot non-missing value as otherwise ggplot can disappear lines
+    dt <- dt[ !is.na(concentration)]
+
     p <- ggplot2::ggplot(dt, ggplot2::aes(x = time,
                                           y = concentration)) +
         ggplot2::geom_line(ggplot2::aes(colour = plume_id, alpha=is_plume), na.rm=TRUE) +
