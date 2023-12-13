@@ -297,6 +297,9 @@ plot_plumes <- function(concentration,
                         bg_alpha = 0.5) {
     dt <- data.table(concentration = concentration, time = time)
 
+    # Straight away remove missing valuesjk
+    dt <- dt[ !is.na(concentration)]
+
     # Create empty plumes if not provided, just makes plotting easier
     if (is.null(plumes)) {
         plumes <- data.table(start = nanotime(), end = nanotime())
