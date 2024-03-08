@@ -2,6 +2,17 @@
 
 R and Python functions for identifying peaks from measurements taken from ACRUISE campaigns.
 
+NB: There are 3 distinct peak detection methods used in this package:
+
+  1. Using a rolling averaging approach to estimate the background (in both R and Python packages)
+  2. Using a Generalized Additive Model (GAM) to estimate the background (only in the R package)
+  3. Using wavelets to directly extract the plumes (only in Python)
+
+The first method isn't recommended anymore owing to its large number of parameters.
+The GAM method works well and only has a single parameter to tune, but it can be rather slow.
+The Wavelet method also has a single parameter to tune and is fast, and is thus the preferred option.
+The only limitation is that Wavelets can be unfamiliar to users and thus harder to get a feel for how the parameters influence the detected plumes.
+
 ## Methodology
 
 The workflow of the peak extraction comprises 3 steps:
@@ -214,3 +225,52 @@ co2_areas
 ...
 ```
 
+### Wavelet plume detection
+
+A new feature in the Python version is the ability to directly identify plumes using wavelets, rather than the 2-step process of identifying the background and subtracting it.
+This has the added benefit of being far faster than the GAM method using in the R package but still only having a single dial to tune.
+
+```python
+peakid.max_wavelet_level(df_co2['conc'])
+```
+
+```
+17
+```
+
+```python
+peakid.detect_plumes_wavelets(df_co2['conc'],
+                              levels = [17],
+                              plot=True)
+```
+![Wavelet peak detection using the lowest level](images/plumes_wavelets_1.png)
+
+```python
+peakid.detect_plumes_wavelets(df_co2['conc'],
+                             levels = list(range(1, 18)),
+                             plot=True)
+```
+![Wavelet peak detection using all levels](images/plumes_wavelets_2.png)
+
+```python
+peakid.detect_plumes_wavelets(df_co2['conc'],
+                             levels = list(range(1, 18)),
+                             interpolate=True,
+                             plot=True)
+```
+![Wavelet peak detection using all levels and interpolating missing data](images/plumes_wavelets_3.png)
+
+```python
+peakid.detect_plumes_wavelets(df_co2['conc'],
+                             levels = [14],
+                             plot=True)
+```
+![Wavelet peak detection using level 14](images/plumes_wavelets_4.png)
+
+```python
+peakid.detect_plumes_wavelets(df_co2['conc'],
+                             levels = [13, 14, 15, 16, 17],
+                             plot=True)
+```
+
+![Wavelet peak detection using levels 13-17](images/plumes_wavelets_5.png)
