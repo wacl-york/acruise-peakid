@@ -366,13 +366,13 @@ def detect_plumes_wavelets(concentration: pd.Series,
         plt.legend()
         plt.show()
 
-    df = pd.DataFrame({"concentration": concentration})
+    df = pd.DataFrame({"concentration": concentration, "reconstruction": recon})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
 
     # Derive useful values for identifying plumes
-    df["is_plume"] = df["concentration"] > plume_threshold
-    df["is_plume_starting"] = df["concentration"] > plume_starting
+    df["is_plume"] = df["reconstruction"] > plume_threshold
+    df["is_plume_starting"] = df["reconstruction"] > plume_starting
     df["plume_group_starting"] = (
         df["is_plume_starting"] != df["is_plume_starting"].shift()
     ).cumsum()
