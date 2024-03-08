@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import matplotlib.dates as mdates
+import pywt
+from typing import Optional
 
 
 def identify_background(
@@ -270,3 +272,147 @@ def plot_plumes(
     for row in plumes.itertuples():
         ax.plot(concentration.loc[row.start : row.end])
     plt.show()
+
+def max_wavelet_level(concentration: pd.Series):
+    """
+    Identifies the maximum number of levels a signal can be decomposed into
+    using wavelets.
+
+    This is a thin wrapper around `pywt.dwt_max_level`.
+
+    Args:
+        concentration (pd.Series): The input concentration time-series.
+
+    Returns:
+        An integer with the maximum number of levels that can be used in
+        `detect_plumes_wavelets`.
+    """
+    return pywt.dwt_max_level(len(concentration), 'haar')
+
+def detect_plumes_wavelets(concentration: pd.Series,
+                           levels: Optional[list[int]] = None,
+                           plume_threshold: float =1,
+                           plume_starting: float =0.5,
+                           plume_buffer: float = 10,
+                           interpolate: bool = False,
+                           plot: bool = False):
+    """
+    Detects peaks using a wavelet decomposition.
+
+    This function works differently to the main `detect_plumes`. Rather than
+    taking a 2-step approach to identify the background and then remove it leaving
+    the plumes behind, the plumes are instead directly identified.
+
+    The concentration time-series is decomposed using a multi-level Haar
+    wavelet.
+    By reconstructing the signal using a partial set of lower-order Wavelet
+    coefficients, the resulting signal has the high-frequency plume content but
+    without the slowly-varying background.
+    This is a very quick process, so it is recommended to iteratively try
+    different levels and plotting the results (with `plot=True`) before
+    saving the output plume locations.
+
+    For a gentle introduction to the Haar wavelet, see the first 11 minutes of
+    this video:
+    https://www.youtube.com/watch?v=c1XL5BeI9_s
+
+    Args:
+        - concentration (pd.Series): Concentration time-series.
+        - levels (list[int]): Which levels of the decomposition to use when
+            reconstructing the peaks
+        - plume_threshold (float): The threshold determine whether a signal is a
+            plume.
+        - plume_starting (float): The threshold from where plumes are determined
+            to start.
+        - plume_buffer (float): A buffer in seconds applied to plumes, so
+            that if they are overlapping they are merged into the same plume.
+        - interpolate (bool): Whether to linearly interpolate missing values
+            from the raw concentration time-series. Can help in certain conditions.
+        - plot (bool): Whether to plot a diagnostic plot of the wavelet
+            recomposition with the threshold lines. Used to help identify optimal
+            parameter settings.
+
+    Returns:
+        A pd.DataFrame where each row corresponds to a unique plume, whose
+        time boundaries are contained in the 2 columns: `start` and `end`.
+    """
+    # Interpolate missing values - can mess with Wavelets
+    if interpolate:
+        concentration = concentration.interpolate()
+    coefs = pywt.wavedec(concentration, 'haar')
+    max_level = max_wavelet_level(concentration)
+    # Wrap levels in list if provided single int
+    if type(levels) is int:
+        levels = [levels]
+    if any(max_level < l < 1 for l in levels):
+        raise ValueError("Levels must be between 1 and a maximum level, determined by `max_wavelet_level`")
+
+    # Set unselected levels to zero
+    # NB since only ever want the detail and not the approximation (index 0).
+    # This has the handy bonus effect of meaning we don't need to explicitly
+    # convert between 1-index (User-interface) and 0-index (how they are stored)
+    if levels is not None:
+        coefs_selected = [np.zeros_like(x) if i not in levels else x for i, x in enumerate(coefs)]
+
+    recon = abs(pywt.waverec(coefs_selected, 'haar')[1:])
+
+    if plot:
+        plt.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
+        plt.plot(recon, label=f"Reconstructed signal using levels {','.join((str(x) for x in levels))}")
+        plt.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
+                   label="plume_threshold")
+        plt.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',
+                   label="plume_starting")
+        plt.legend()
+        plt.show()
+
+    df = pd.DataFrame({"concentration": concentration})
+    # Rename index so can reliably refer to it later
+    df.index.rename("index", inplace=True)
+
+    # Derive useful values for identifying plumes
+    df["is_plume"] = df["concentration"] > plume_threshold
+    df["is_plume_starting"] = df["concentration"] > plume_starting
+    df["plume_group_starting"] = (
+        df["is_plume_starting"] != df["is_plume_starting"].shift()
+    ).cumsum()
+
+    # Find all groups where concentration are > than the lower starting threshold, and that
+    # also have at least one value greater than the higher threshold required to say it is a plume
+    plume_groups = (
+        df.loc[df["is_plume_starting"]]
+        .reset_index()
+        .groupby("plume_group_starting")
+        .agg(
+            has_plume=pd.NamedAgg(column="is_plume", aggfunc="sum"),
+            start=pd.NamedAgg(column="index", aggfunc="min"),
+            end=pd.NamedAgg(column="index", aggfunc="max"),
+        )
+        .query("has_plume > 0")
+        .drop("has_plume", axis=1)
+        .sort_values(["start", "end"])
+    )
+
+    # Combine overlapping plumes
+    buffer_time = datetime.timedelta(seconds=plume_buffer)
+    # Use Interval data structure here which is effectively syntatical sugar
+    # around a tuple
+    plume_intervals = [
+        pd.Interval(s, e, closed="both")
+        for s, e in zip(plume_groups["start"], plume_groups["end"])
+    ]
+
+    def reduce_intervals(acc, el):
+        plume_with_buffer = pd.Interval(acc[0].left, acc[0].right + buffer_time)
+        if plume_with_buffer.overlaps(el):
+            return [pd.Interval(acc[0].left, el.right)] + acc[1:]
+        else:
+            return [el] + acc
+
+    plume_overlap = reduce(reduce_intervals, plume_intervals[1::], [plume_intervals[0]])
+
+    # Convert into DataFrame for user friendliness
+    plumes_condensed = pd.DataFrame(
+        [{"start": x.left, "end": x.right} for x in plume_overlap]
+    ).sort_values(["start"])
+    return plumes_condensed
