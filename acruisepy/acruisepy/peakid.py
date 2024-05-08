@@ -355,7 +355,7 @@ def detect_plumes_wavelets(concentration: pd.Series,
     if levels is not None:
         coefs_selected = [np.zeros_like(x) if i not in levels else x for i, x in enumerate(coefs)]
 
-    recon = abs(pywt.waverec(coefs_selected, 'haar')[1:])
+    recon = abs(pywt.waverec(coefs_selected, 'haar'))
 
     if plot:
         plt.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
@@ -367,7 +367,10 @@ def detect_plumes_wavelets(concentration: pd.Series,
         plt.legend()
         plt.show()
 
-    df = pd.DataFrame({"concentration": concentration, "reconstruction": recon})
+    # Ensure the 2 signals are the same length - not guaranteed!
+    con_start = np.max(np.array([0, concentration.size-recon.size])):
+    recon_end = recon.size if recon.size <= concentration.size else concentration.size - recon.size
+    df = pd.DataFrame({"concentration": concentration[con_start:], "reconstruction": recon[:recon_end]})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
 
