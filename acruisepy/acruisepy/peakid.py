@@ -75,10 +75,10 @@ def detect_plumes(
     Detects plumes in a concentration time series.
 
     Args:
-        - concentration (pd.Series): The concentration time-series. Should have a
+        - concentration (pd.Series): The concentration time-series. Must have a
             Datetime index.
         - background (pd.Series): The smoothed background time-series, as can be
-            obtained from identify_background(). Should have the same
+            obtained from identify_background(). Must have the same
             Datetime index as concentration.
         - plume_sd_threshold (float): Plumes are identified as samples
             greater than certain number of standard deviations from a
@@ -317,7 +317,8 @@ def detect_plumes_wavelets(concentration: pd.Series,
     https://www.youtube.com/watch?v=c1XL5BeI9_s
 
     Args:
-        - concentration (pd.Series): Concentration time-series.
+        - concentration (pd.Series): Concentration time-series, must have a 
+            Datetime index.
         - levels (list[int]): Which levels of the decomposition to use when
             reconstructing the peaks
         - plume_threshold (float): The threshold determine whether a signal is a
@@ -354,7 +355,7 @@ def detect_plumes_wavelets(concentration: pd.Series,
     if levels is not None:
         coefs_selected = [np.zeros_like(x) if i not in levels else x for i, x in enumerate(coefs)]
 
-    recon = abs(pywt.waverec(coefs_selected, 'haar')[1:])
+    recon = abs(pywt.waverec(coefs_selected, 'haar'))
 
     if plot:
         plt.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
@@ -366,7 +367,10 @@ def detect_plumes_wavelets(concentration: pd.Series,
         plt.legend()
         plt.show()
 
-    df = pd.DataFrame({"concentration": concentration, "reconstruction": recon})
+    # Ensure the 2 signals are the same length - not guaranteed!
+    con_start = np.max(np.array([0, concentration.size-recon.size]))
+    recon_end = recon.size if recon.size <= concentration.size else concentration.size - recon.size
+    df = pd.DataFrame({"concentration": concentration[con_start:], "reconstruction": recon[:recon_end]})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
 
