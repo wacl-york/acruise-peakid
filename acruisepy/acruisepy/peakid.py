@@ -368,7 +368,7 @@ def detect_plumes_wavelets(concentration: pd.Series,
         plt.show()
 
     # Ensure the 2 signals are the same length - not guaranteed!
-    con_start = np.max(np.array([0, concentration.size-recon.size])):
+    con_start = np.max(np.array([0, concentration.size-recon.size]))
     recon_end = recon.size if recon.size <= concentration.size else concentration.size - recon.size
     df = pd.DataFrame({"concentration": concentration[con_start:], "reconstruction": recon[:recon_end]})
     # Rename index so can reliably refer to it later
