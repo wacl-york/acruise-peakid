@@ -216,6 +216,8 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty
 
     areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration), concentration), by = list(time, time.1, plume_id)]
 
+    # NB: areas here has 1 row per timepoint within a plume, as this is needed for the uncertainty calculation
+    # If not running uncertainty it will get reduced down to 1 row per plume with the area in the else statement
     if (!is.null(uncertainty)) {
         h2_2 <- (dx / 2)**2
         if (uncertainty_type == "relative") {
@@ -225,6 +227,8 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty
         }
         # For each consecutive point within a plume, take the Sqrt of the sum of each point's uncertainty
         areas <- areas[, .(area = mean(area, na.rm = T), uncertainty = sum(sqrt(delta + lag(delta)), na.rm = T)), by = .(time, time.1, plume_id)]
+    } else {
+        areas <- unique(areas, by=c("time", "time.1", "plume_id", "area"))
     }
 
     areas[, plume_id := NULL]
