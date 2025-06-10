@@ -151,7 +151,10 @@ def detect_plumes(
 
 
 def integrate_aup_trapz(
-    concentration: pd.Series, plumes: pd.DataFrame, dx: float = 1.0
+    concentration: pd.Series,
+    plumes: pd.DataFrame,
+    background: Optional[pd.Series] = None,
+    dx: Optional[float] = 1.0
 ) -> pd.DataFrame:
     """
     Integrate the Area Under a Plume (aup) using a trapezoidal method.
@@ -161,7 +164,10 @@ def integrate_aup_trapz(
           removed. Must have a Datetime index.
         - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
           containing plume boundaries, as returned by detect_plumes()
-        - dx (float): Sampling time, passed onto the dz argument of
+        - background (pd.Series): A Series containing background measurements, has
+          the same number of observations as `concentration`. If not provided,
+          the background is linearly interpolated over the plume.
+        - dx (float): Sampling time, passed onto the dx argument of
           np.trapz.
 
     Returns:
@@ -170,6 +176,12 @@ def integrate_aup_trapz(
         contains the integrated area.
     """
     areas = []
+    if background is None:
+        background = concentration.copy(deep=True)
+        for row in plumes.itertuples():
+            background.loc[row.start : row.end] = np.nan
+        background = background.interpolate(method='linear')
+    concentration = concentration - background
     for row in plumes.itertuples():
         this_df = pd.DataFrame(
             [
