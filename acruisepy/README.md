@@ -105,7 +105,7 @@ peakid.detect_plumes_wavelets(df_co2['conc'],
 
 ![Wavelet peak detection using levels 13-17](../images/plumes_wavelets_5.png)
 
-Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot using the regular function.
+Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot them using `plot_plumes`.
 
 ```python
 plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
@@ -122,26 +122,26 @@ peakid.plot_plumes(df_co2['conc'], plumes_wave)
 
 The plume total concentrations are estimated by calculating the area under the curve, having removed the background.
 This calculation is achieved using the trapezoidal rule (see `numpy.trapezoid` for further details) and is implemented in `integrate_aup_trapz`.
-This function returns a DataFrame with 1 row per plume and a new column `area` containing the plume area.
+This function returns a DataFrame with 1 row per plume and a column `area` containing the plume area.
 
 ```python
-co2_areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes_wave, dx=0.1)
+co2_areas = peakid.integrate_aup_trapz(plumes_wave, dx=0.1)
 co2_areas
 ```
 
 ```
-                    start                     end       area
-0 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700    8.05630
-0 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    1.65705
-0 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   16.23085
-0 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    1.09915
-0 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    8.17825
-0 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    4.81380
-0 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   26.07085
-0 2021-10-04 10:32:17.900 2021-10-04 10:32:54.300   54.01440
-0 2021-10-04 10:35:08.800 2021-10-04 10:35:09.000    0.12570
-0 2021-10-04 10:35:22.000 2021-10-04 10:38:11.100  539.92195
-0 2021-10-04 10:42:08.000 2021-10-04 10:43:48.400  299.76850
+   plume_id                   start                     end        area
+0         1 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700   16.578080
+0         2 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    2.824344
+0         3 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   23.125692
+0         4 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    2.340719
+0         5 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    9.168073
+0         6 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    6.015773
+0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   34.513744
+0         8 2021-10-04 10:32:17.900 2021-10-04 10:32:54.300   37.879378
+0         9 2021-10-04 10:35:08.800 2021-10-04 10:35:09.000    0.396569
+0        10 2021-10-04 10:35:22.000 2021-10-04 10:38:11.100  336.366533
+0        11 2021-10-04 10:42:08.000 2021-10-04 10:43:48.400  169.300016
 ...
 ```
 

@@ -147,48 +147,47 @@ def detect_plumes(
     plumes_condensed = pd.DataFrame(
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])
-    return plumes_condensed
+
+    output = []
+    plumes_condensed['plume_id'] = range(1, plumes_condensed.shape[0]+1)
+    for row in plumes_condensed.itertuples():
+        sub_df = df.loc[row.start : row.end].copy(deep=True)
+        sub_df['plume_id'] = row.plume_id
+        output.append(sub_df)
+    output = pd.concat(output)
+    return output[['plume_id', 'concentration']]
 
 
 def integrate_aup_trapz(
-    concentration: pd.Series,
     plumes: pd.DataFrame,
-    background: Optional[pd.Series] = None,
     dx: Optional[float] = 1.0
 ) -> pd.DataFrame:
     """
     Integrate the Area Under a Plume (aup) using a trapezoidal method.
 
     Args:
-        - concentration (pd.Series): The concentration time-series with the background
-          removed. Must have a Datetime index.
-        - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
-          containing plume boundaries, as returned by detect_plumes()
-        - background (pd.Series): A Series containing background measurements, has
-          the same number of observations as `concentration`. If not provided,
-          the background is linearly interpolated over the plume.
+        - plumes (pd.DataFrame): A DataFrame as returned by `detect_plumes()`.
         - dx (float): Sampling time, passed onto the dx argument of
           np.trapezoid.
 
     Returns:
-        A pd.DataFrame with one row per plume and 3 columns `start`, `end`, and
-        `area`. The first 2 are the same as in the input `plumes`, while `area`
-        contains the integrated area.
+        A pd.DataFrame with one row per plume and 4 columns:
+            - `plume_id`: Integer plume ID, as obtained in `detect_plumes_wavelets`
+            - `start`: Start time of this plume
+            - `end`: End time of this plume
+            - `area`: Total area under the plume.
     """
     areas = []
-    if background is None:
-        background = concentration.copy(deep=True)
-        for row in plumes.itertuples():
-            background.loc[row.start : row.end] = np.nan
-        background = background.interpolate(method='linear')
-    concentration = concentration - background
-    for row in plumes.itertuples():
+    conc_col = 'reconstruction' if 'reconstruction' in plumes.columns else 'concentration'
+
+    for plume_id, sub_df in plumes.groupby('plume_id'):
         this_df = pd.DataFrame(
             [
                 {
-                    "start": row.start,
-                    "end": row.end,
-                    "area": np.trapezoid(concentration.loc[row.start : row.end], dx=dx),
+                    "plume_id": plume_id,
+                    "start": sub_df.index.min(),
+                    "end": sub_df.index.max(),
+                    "area": np.trapezoid(sub_df[conc_col], dx=dx),
                 }
             ]
         )
@@ -281,8 +280,8 @@ def plot_plumes(
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
     ax.plot(concentration, color="gray", alpha=bg_alpha)
-    for row in plumes.itertuples():
-        ax.plot(concentration.loc[row.start : row.end])
+    for plume_id, sub_df in plumes.groupby('plume_id'):
+        ax.plot(sub_df['concentration'])
     plt.show()
 
 def max_wavelet_level(concentration: pd.Series):
@@ -346,8 +345,11 @@ def detect_plumes_wavelets(concentration: pd.Series,
             parameter settings.
 
     Returns:
-        A pd.DataFrame where each row corresponds to a unique plume, whose
-        time boundaries are contained in the 2 columns: `start` and `end`.
+        A pd.DataFrame where each row corresponds to a timepoint within a plume
+        with 3 columns:
+          - plume_id: Integer ID identifying the plume this measurement came from
+          - concentration: Raw concentration at this timepoint
+          - reconstruction: Concentration with the background removed
     """
     # Interpolate missing values - can mess with Wavelets
     if interpolate:
@@ -432,4 +434,14 @@ def detect_plumes_wavelets(concentration: pd.Series,
     plumes_condensed = pd.DataFrame(
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])
-    return plumes_condensed
+
+    # Join back into time-series and extract reconstruction
+    output = []
+    plumes_condensed['plume_id'] = range(1, plumes_condensed.shape[0]+1)
+    for row in plumes_condensed.itertuples():
+        sub_df = df.loc[row.start : row.end].copy(deep=True)
+        sub_df['plume_id'] = row.plume_id
+        output.append(sub_df)
+    output = pd.concat(output)
+
+    return output[['plume_id', 'concentration', 'reconstruction']]
