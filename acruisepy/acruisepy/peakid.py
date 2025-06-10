@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.dates as mdates
 import pywt
 from typing import Optional
+from warnings import warn
 
 
 def identify_background(
@@ -40,6 +41,7 @@ def identify_background(
         The smoothed background covering the full times series as a pd.Series
         object.
     """
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     # Smooth concentration to get smoothed rolling SD
     roll_std = (
         concentration.fillna(method="ffill")
@@ -93,7 +95,7 @@ def detect_plumes(
         A pd.DataFrame where each row corresponds to a unique plume, whose
         time boundaries are contained in the 2 columns: `start` and `end`.
     """
-
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     df = pd.DataFrame({"concentration": concentration, "background": background})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
@@ -179,6 +181,8 @@ def integrate_aup_trapz(
     """
     areas = []
     conc_col = 'reconstruction' if 'reconstruction' in plumes.columns else 'concentration'
+    if conc_col == 'concentration':
+        warn('Ensure that you have subtracted the background from the `concentration` column first! The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
 
     for plume_id, sub_df in plumes.groupby('plume_id'):
         this_df = pd.DataFrame(
@@ -229,6 +233,7 @@ def plot_background(
     Returns:
         None, plots a figure as a side-effect.
     """
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter(date_fmt)
     ax.xaxis.set_major_formatter(myFmt)
