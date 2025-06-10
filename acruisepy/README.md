@@ -106,6 +106,7 @@ peakid.detect_plumes_wavelets(df_co2['conc'],
 ![Wavelet peak detection using levels 13-17](../images/plumes_wavelets_5.png)
 
 Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot them using `plot_plumes`.
+**NB: don't forget to set `plume_buffer` if there are nearby peaks that should be considered part of the same plume.**
 
 ```python
 plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
