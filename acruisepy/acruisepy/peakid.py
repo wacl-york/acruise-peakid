@@ -370,13 +370,14 @@ def detect_plumes_wavelets(concentration: pd.Series,
     recon = abs(pywt.waverec(coefs_selected, 'haar'))
 
     if plot:
-        plt.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
-        plt.plot(recon, label=f"Reconstructed signal using levels {','.join((str(x) for x in levels))}")
-        plt.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
+        fig, ax = plt.subplots()
+        ax.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
+        ax.plot(recon, label=f"Reconstructed signal using levels {','.join((str(x) for x in levels))}")
+        ax.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
                    label="plume_threshold")
-        plt.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',
+        ax.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',
                    label="plume_starting")
-        plt.legend()
+        ax.legend()
         plt.show()
 
     # Ensure the 2 signals are the same length - not guaranteed!
