@@ -168,7 +168,7 @@ def integrate_aup_trapz(
           the same number of observations as `concentration`. If not provided,
           the background is linearly interpolated over the plume.
         - dx (float): Sampling time, passed onto the dx argument of
-          np.trapz.
+          np.trapezoid.
 
     Returns:
         A pd.DataFrame with one row per plume and 3 columns `start`, `end`, and
@@ -188,7 +188,7 @@ def integrate_aup_trapz(
                 {
                     "start": row.start,
                     "end": row.end,
-                    "area": np.trapz(concentration.loc[row.start : row.end], dx=dx),
+                    "area": np.trapezoid(concentration.loc[row.start : row.end], dx=dx),
                 }
             ]
         )
