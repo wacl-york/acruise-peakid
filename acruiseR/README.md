@@ -73,10 +73,13 @@ plot_plumes(df_co2$CO2_ppm, df_co2$time_nano, plumes)
 ![the extracted plumes highlighted on the concentration time-series](../images/plumes_r.png)
 
 Once the plumes have been finalised, the area under the plumes can be calculated using a trapezoidal approach.
-It's crucial to subtract the background from the concentration time-series for this function (note that the background is held in the `bg` attribute of the result from `identify_background`).
+It's crucial to subtract the background from the concentration time-series for this function, this can be done in 1 of 2 ways:
+
+  - Explicitly provide a background (e.g. estimated from `identify_background`) to the `background` argument as below
+  - If a background isn't provided then it is linearly interpolated over the plume duration
 
 ```r
-co2_areas <- integrate_aup_trapz(df_co2$CO2_ppm - bg_gam$bg, df_co2$time_nano, plumes, dx=0.1)
+co2_areas <- integrate_aup_trapz(df_co2$CO2_ppm, df_co2$time_nano, plumes, background=bg_gam$bg, dx=0.1)
 co2_areas
 ```
 
