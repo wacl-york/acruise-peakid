@@ -1,10 +1,10 @@
 # acruisepy 
 
-### Installation
+## Installation
 
 To install the Python package, run `pip install git+https://github.com/wacl-york/acruise-peakid#subdirectory=acruisepy`.
 
-### Usage
+## Usage
 
 Below shows an example of loading some CO2 data into Pandas for use with `acruisepy` and subsetting it to a period of interest.
 The first column in the CSV is a datetime, which has been set to to the DataFrame's index **NB: a datetime index must be used**.
@@ -15,11 +15,11 @@ import pandas as pd
 from acruisepy import peakid
 
 df_co2 = pd.read_csv(
-    "C258_FGGA_FAAM.txt",
+    "../data/C258_FGGA_FAAM.txt",
     names=["conc", "a", "b"],
     parse_dates=True,
     header=1,
-    date_parser=lambda x: datetime.datetime.strptime(x, "%d/%m/%Y %H:%M:%S.%f"),
+    date_format="%d/%m/%Y %H:%M:%S.%f"
 )
 start_time = datetime.datetime(2021, 10, 4, 9, 40, 0)
 end_time = datetime.datetime(2021, 10, 4, 13, 30, 0)
@@ -118,10 +118,41 @@ peakid.plot_plumes(df_co2['conc'], plumes_wave)
 
 ![Final plumes detected by the wavelets](../images/plumes_wavelets_6.png)
 
+### Determining peak areas
+
+The plume total concentrations are estimated by calculating the area under the curve, having removed the background.
+This calculation is achieved using the trapezoidal rule (see `numpy.trapezoid` for further details) and is implemented in `integrate_aup_trapz`.
+This function returns a DataFrame with 1 row per plume and a new column `area` containing the plume area.
+
+```python
+co2_areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes_wave, dx=0.1)
+co2_areas
+```
+
+```
+                    start                     end       area
+0 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700    8.05630
+0 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    1.65705
+0 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   16.23085
+0 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    1.09915
+0 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    8.17825
+0 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    4.81380
+0 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   26.07085
+0 2021-10-04 10:32:17.900 2021-10-04 10:32:54.300   54.01440
+0 2021-10-04 10:35:08.800 2021-10-04 10:35:09.000    0.12570
+0 2021-10-04 10:35:22.000 2021-10-04 10:38:11.100  539.92195
+0 2021-10-04 10:42:08.000 2021-10-04 10:43:48.400  299.76850
+...
+```
+
+By default, the background is estimated by a linear interpolation of the concentration time-series after removing the plumes.
+However, a Series can be provided with the background to be removed if this is available.
+This is useful in situations where the linear interpolation isn't appropriate, e.g. when there is a time-varying background.
+
 ### Original method
 
-NB: this method is no longer recommended and is just mentioned here for posterity.
-It is slower than the wavelet approach, contains more parameters to tune, and being a 2-step process is more involved.
+**NB: this method is no longer recommended and is just mentioned here for posterity.**
+It is slower than the wavelet approach, contains more parameters to tune, and has 2 steps rather than 1.
 
 The first step is to identify the background level, against which plumes will be compared.
 The `peakid.identify_background` function takes in the concentration and several tuning parameters, here the default values are used but it is highly likely you will need to tune them for your dataset. 
