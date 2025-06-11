@@ -161,14 +161,22 @@ def detect_plumes(
 
 
 def integrate_aup_trapz(
+    concentration: pd.Series,
     plumes: pd.DataFrame,
+    background: Optional[pd.Series] = None,
     dx: Optional[float] = 1.0
 ) -> pd.DataFrame:
     """
     Integrate the Area Under a Plume (aup) using a trapezoidal method.
 
     Args:
+        - concentration (pd.Series): The concentration time-series. 
+          Must have a Datetime index.
         - plumes (pd.DataFrame): A DataFrame as returned by `detect_plumes()`.
+        - background (pd.Series): A time-series of background measurements, the
+          same length as `concentration`. Used to subtract the background before
+          peak integration. If not provided interpolates linearly over the plume
+          duration. Must share an index with `concentration`.
         - dx (float): Sampling time, passed onto the dx argument of
           np.trapezoid.
 
@@ -179,19 +187,24 @@ def integrate_aup_trapz(
             - `end`: End time of this plume
             - `area`: Total area under the plume.
     """
-    areas = []
-    conc_col = 'reconstruction' if 'reconstruction' in plumes.columns else 'concentration'
-    if conc_col == 'concentration':
-        warn('Ensure that you have subtracted the background from the `concentration` column first! The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
+    if background is None:
+        background = concentration.copy(deep=True)
+        for plume_id, sub_df in plumes.groupby('plume_id'):
+            background.loc[sub_df.index.min():sub_df.index.max()] = np.nan
+        background = background.interpolate(method='linear')
+    concentration = concentration - background
 
+    areas = []
     for plume_id, sub_df in plumes.groupby('plume_id'):
+        start = sub_df.index.min()
+        end = sub_df.index.max()
         this_df = pd.DataFrame(
             [
                 {
                     "plume_id": plume_id,
-                    "start": sub_df.index.min(),
-                    "end": sub_df.index.max(),
-                    "area": np.trapezoid(sub_df[conc_col], dx=dx),
+                    "start": start,
+                    "end": end,
+                    "area": np.trapezoid(concentration.loc[start:end], dx=dx),
                 }
             ]
         )
@@ -361,6 +374,8 @@ def detect_plumes_wavelets(concentration: pd.Series,
         concentration = concentration.interpolate()
     coefs = pywt.wavedec(concentration, 'haar')
     max_level = max_wavelet_level(concentration)
+
+    # TODO Just pass number levels and let it work out levels for us
     # Wrap levels in list if provided single int
     if type(levels) is int:
         levels = [levels]
@@ -440,7 +455,7 @@ def detect_plumes_wavelets(concentration: pd.Series,
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])
 
-    # Join back into time-series and extract reconstruction
+    # Join back into time-series and extract concentration
     output = []
     plumes_condensed['plume_id'] = range(1, plumes_condensed.shape[0]+1)
     for row in plumes_condensed.itertuples():
@@ -449,4 +464,4 @@ def detect_plumes_wavelets(concentration: pd.Series,
         output.append(sub_df)
     output = pd.concat(output)
 
-    return output[['plume_id', 'concentration', 'reconstruction']]
+    return output[['plume_id', 'concentration']]

@@ -107,12 +107,14 @@ peakid.detect_plumes_wavelets(df_co2['conc'],
 
 Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot them using `plot_plumes`.
 **NB: don't forget to set `plume_buffer` if there are nearby peaks that should be considered part of the same plume.**
+If 2 plumes are this many seconds apart or less they will be combined.
 
 ```python
 plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
                                             levels = [13, 14, 15, 16, 17],
                                             plume_threshold=2,
                                             plume_starting=1.2,
+                                            plume_buffer=5,
                                             plot=False)
 peakid.plot_plumes(df_co2['conc'], plumes_wave)
 ```
@@ -124,25 +126,25 @@ peakid.plot_plumes(df_co2['conc'], plumes_wave)
 The plume total concentrations are estimated by calculating the area under the curve, having removed the background.
 This calculation is achieved using the trapezoidal rule (see `numpy.trapezoid` for further details) and is implemented in `integrate_aup_trapz`.
 This function returns a DataFrame with 1 row per plume and a column `area` containing the plume area.
+By default the background is linearly interpolated within a plume, although a Series can be provided to the `background` argument if the background has been explicitly estimated. 
+This is useful in cases where there is a strong time-varying component to the background, although for most applications the plume duration will be very short compared to the background frequency so the linear interpolation is sufficient.
 
 ```python
-co2_areas = peakid.integrate_aup_trapz(plumes_wave, dx=0.1)
+co2_areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes_wave, dx=0.1)
 co2_areas
 ```
 
 ```
-   plume_id                   start                     end        area
-0         1 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700   16.578080
-0         2 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    2.824344
-0         3 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   23.125692
-0         4 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    2.340719
-0         5 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    9.168073
-0         6 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    6.015773
-0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   34.513744
-0         8 2021-10-04 10:32:17.900 2021-10-04 10:32:54.300   37.879378
-0         9 2021-10-04 10:35:08.800 2021-10-04 10:35:09.000    0.396569
-0        10 2021-10-04 10:35:22.000 2021-10-04 10:38:11.100  336.366533
-0        11 2021-10-04 10:42:08.000 2021-10-04 10:43:48.400  169.300016
+   plume_id                   start                     end       area              
+0         1 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700    8.05630              
+0         2 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    1.65705              
+0         3 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   16.23085              
+0         4 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    1.09915              
+0         5 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    8.17825              
+0         6 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    4.81380              
+0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   26.07085              
+0         8 2021-10-04 10:32:17.900 2021-10-04 10:32:18.300    0.50540              
+0         9 2021-10-04 10:32:25.600 2021-10-04 10:32:41.500   18.98325 
 ...
 ```
 
@@ -187,14 +189,10 @@ peakid.plot_plumes(df_co2['conc'], plumes)
 
 Once the plumes have been finalised, the area under the plumes can be calculated.
 This is currently done using a trapezoidal approach, see the documentation for `numpy.trapz` for further details.
-**NB: it's essential to subtract the background from the concentration time-series for this function.**
+**NB: provide the previously estimated background, otherwise it will be estimated by a linear interpolation within plumes**
 
 ```python
-for plume_id, sub_df in plumes.groupby('plume_id'):
-    start = sub_df.index.min()
-    end = sub_df.index.max()
-    plumes.loc[start:end, 'concentration'] = sub_df.loc[start:end, 'concentration'] - bg.loc[start:end]
-areas = peakid.integrate_aup_trapz(plumes, dx=0.1)
+areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes, background=bg, dx=0.1)
 areas
 ```
 
@@ -209,14 +207,5 @@ areas
 0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:23.500    0.650395
 0         8 2021-10-04 10:31:31.800 2021-10-04 10:31:50.900   47.789589
 0         9 2021-10-04 10:32:17.800 2021-10-04 10:32:18.400    1.644525
-0        10 2021-10-04 10:32:23.900 2021-10-04 10:32:47.400   66.356445
-0        11 2021-10-04 10:34:47.100 2021-10-04 10:34:52.700   12.921175
-0        12 2021-10-04 10:34:59.200 2021-10-04 10:35:01.600    5.850239
-0        13 2021-10-04 10:35:08.300 2021-10-04 10:35:22.200   25.770135
-0        14 2021-10-04 10:35:30.700 2021-10-04 10:35:46.100   33.194382
-0        15 2021-10-04 10:35:51.400 2021-10-04 10:36:07.900   47.643647
-0        16 2021-10-04 10:36:13.200 2021-10-04 10:38:08.600  562.229450
-0        17 2021-10-04 10:42:08.100 2021-10-04 10:43:08.200  284.205623
 ...
 ```
-
