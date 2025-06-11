@@ -319,7 +319,7 @@ def max_wavelet_level(concentration: pd.Series):
     return pywt.dwt_max_level(len(concentration), 'haar')
 
 def detect_plumes_wavelets(concentration: pd.Series,
-                           levels: Optional[list[int]] = None,
+                           levels: int,
                            plume_threshold: float =1,
                            plume_starting: float =0.5,
                            plume_buffer: float = 10,
@@ -348,8 +348,8 @@ def detect_plumes_wavelets(concentration: pd.Series,
     Args:
         - concentration (pd.Series): Concentration time-series, must have a 
             Datetime index.
-        - levels (list[int]): Which levels of the decomposition to use when
-            reconstructing the peaks
+        - levels (int): How many levels of the decomposition to use when
+            reconstructing the peaks.
         - plume_threshold (float): The threshold determine whether a signal is a
             plume.
         - plume_starting (float): The threshold from where plumes are determined
@@ -375,26 +375,22 @@ def detect_plumes_wavelets(concentration: pd.Series,
     coefs = pywt.wavedec(concentration, 'haar')
     max_level = max_wavelet_level(concentration)
 
-    # TODO Just pass number levels and let it work out levels for us
-    # Wrap levels in list if provided single int
-    if type(levels) is int:
-        levels = [levels]
-    if any(max_level < l < 1 for l in levels):
-        raise ValueError("Levels must be between 1 and a maximum level, determined by `max_wavelet_level`")
+    if levels > max_level or levels <= 0:
+        raise ValueError(f"levels must be between 1 and {max_level} (determined by `max_wavelet_level`)")
 
     # Set unselected levels to zero
     # NB since only ever want the detail and not the approximation (index 0).
     # This has the handy bonus effect of meaning we don't need to explicitly
     # convert between 1-index (User-interface) and 0-index (how they are stored)
-    if levels is not None:
-        coefs_selected = [np.zeros_like(x) if i not in levels else x for i, x in enumerate(coefs)]
+    coefs_to_keep = list(range(max_level - (levels - 1), (max_level + 1)))
+    coefs_selected = [np.zeros_like(x) if i not in coefs_to_keep else x for i, x in enumerate(coefs)]
 
     recon = abs(pywt.waverec(coefs_selected, 'haar'))
 
     if plot:
         fig, ax = plt.subplots()
         ax.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
-        ax.plot(recon, label=f"Reconstructed signal using levels {','.join((str(x) for x in levels))}")
+        ax.plot(recon, label=f"Reconstructed signal using {levels} levels")
         ax.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
                    label="plume_threshold")
         ax.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',

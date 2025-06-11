@@ -48,26 +48,26 @@ peakid.max_wavelet_level(df_co2['conc'])
 17
 ```
 
-The 17 levels correspond to different frequency bands of the original signal, with level 0 being the lowest frequency and 17 the highest.
+The 17 levels correspond to different frequency bands of the original signal, with level 1 being the lowest frequency and 17 the highest.
 We want a high-pass filter that only reconstructs the high-frequency plumes and is flat during the background.
 
-At a first attempt, try using just level 17.
+At a first attempt, try using just 1 level.
 By using argument `plot=True`, the reconstructed time-series will be plotted alongside the (normalised) raw signal and the horizontal lines that will be later used to demarcate plumes.
 This first attempt finds several plumes, although certainly not all of them or enough to use by itself, but none of the low-frequency baseline has been picked up.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                              levels = [17],
+                              levels = 1,
                               plot=True)
 ```
 ![Wavelet peak detection using the lowest level](../images/plumes_wavelets_1.png)
 
-For a reference point try using all levels 1-17.
+For a reference point try using all 17 levels.
 Be careful, as in the example below this will fail if there are missing values in the data.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = list(range(1, 18)),
+                             levels = 17,
                              plot=True)
 ```
 ![Wavelet peak detection using all levels](../images/plumes_wavelets_2.png)
@@ -78,32 +78,22 @@ However, this isn't helpful for plume detection as it's effectively the same as 
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = list(range(1, 18)),
+                             levels = 17,
                              interpolate=True,
                              plot=True)
 ```
 ![Wavelet peak detection using all levels and interpolating missing data](../images/plumes_wavelets_3.png)
 
-For another comparison point, try a different higher-level coefficient; here 14 is plotted.
-This finds subtly different peaks to just using 17, giving us the clue to how to extract the plumes: combining a subset of high-detailed levels.
-
-```python
-peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = [14],
-                             plot=True)
-```
-![Wavelet peak detection using level 14](../images/plumes_wavelets_4.png)
-
-Using levels 13-17 has identified all the peaks without letting in too much of the background noise, it thus is a suitable place from which to extract the plumes.
+Using 5 levels has identified all the peaks without letting in too much of the background noise, it thus is a suitable place from which to extract the plumes.
 These are simply thresholded in the same manner as in the regular `detect_plumes`, with 2 thresholds detailing 1) what should be considered a plume and b) where plumes should be considered to start from.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = [13, 14, 15, 16, 17],
+                             levels = 5,
                              plot=True)
 ```
 
-![Wavelet peak detection using levels 13-17](../images/plumes_wavelets_5.png)
+![Wavelet peak detection using 5 levels](../images/plumes_wavelets_4.png)
 
 Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot them using `plot_plumes`.
 **NB: don't forget to set `plume_buffer` if there are nearby peaks that should be considered part of the same plume.**
@@ -111,7 +101,7 @@ If 2 plumes are this many seconds apart or less they will be combined.
 
 ```python
 plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
-                                            levels = [13, 14, 15, 16, 17],
+                                            levels = 5,
                                             plume_threshold=2,
                                             plume_starting=1.2,
                                             plume_buffer=5,
@@ -119,7 +109,7 @@ plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
 peakid.plot_plumes(df_co2['conc'], plumes_wave)
 ```
 
-![Final plumes detected by the wavelets](../images/plumes_wavelets_6.png)
+![Final plumes detected by the wavelets](../images/plumes_wavelets_5.png)
 
 ### Determining peak areas
 
