@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.dates as mdates
 import pywt
 from typing import Optional
+from warnings import warn
 
 
 def identify_background(
@@ -40,6 +41,7 @@ def identify_background(
         The smoothed background covering the full times series as a pd.Series
         object.
     """
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     # Smooth concentration to get smoothed rolling SD
     roll_std = (
         concentration.fillna(method="ffill")
@@ -93,7 +95,7 @@ def detect_plumes(
         A pd.DataFrame where each row corresponds to a unique plume, whose
         time boundaries are contained in the 2 columns: `start` and `end`.
     """
-
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     df = pd.DataFrame({"concentration": concentration, "background": background})
     # Rename index so can reliably refer to it later
     df.index.rename("index", inplace=True)
@@ -147,36 +149,62 @@ def detect_plumes(
     plumes_condensed = pd.DataFrame(
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])
-    return plumes_condensed
+
+    output = []
+    plumes_condensed['plume_id'] = range(1, plumes_condensed.shape[0]+1)
+    for row in plumes_condensed.itertuples():
+        sub_df = df.loc[row.start : row.end].copy(deep=True)
+        sub_df['plume_id'] = row.plume_id
+        output.append(sub_df)
+    output = pd.concat(output)
+    return output[['plume_id', 'concentration']]
 
 
 def integrate_aup_trapz(
-    concentration: pd.Series, plumes: pd.DataFrame, dx: float = 1.0
+    concentration: pd.Series,
+    plumes: pd.DataFrame,
+    background: Optional[pd.Series] = None,
+    dx: Optional[float] = 1.0
 ) -> pd.DataFrame:
     """
     Integrate the Area Under a Plume (aup) using a trapezoidal method.
 
     Args:
-        - concentration (pd.Series): The concentration time-series with the background
-          removed. Must have a Datetime index.
-        - plumes (pd.DataFrame): A DataFrame with 'start' and 'end' columns
-          containing plume boundaries, as returned by detect_plumes()
-        - dx (float): Sampling time, passed onto the dz argument of
-          np.trapz.
+        - concentration (pd.Series): The concentration time-series. 
+          Must have a Datetime index.
+        - plumes (pd.DataFrame): A DataFrame as returned by `detect_plumes()`.
+        - background (pd.Series): A time-series of background measurements, the
+          same length as `concentration`. Used to subtract the background before
+          peak integration. If not provided interpolates linearly over the plume
+          duration. Must share an index with `concentration`.
+        - dx (float): Sampling time, passed onto the dx argument of
+          np.trapezoid.
 
     Returns:
-        A pd.DataFrame with one row per plume and 3 columns `start`, `end`, and
-        `area`. The first 2 are the same as in the input `plumes`, while `area`
-        contains the integrated area.
+        A pd.DataFrame with one row per plume and 4 columns:
+            - `plume_id`: Integer plume ID, as obtained in `detect_plumes_wavelets`
+            - `start`: Start time of this plume
+            - `end`: End time of this plume
+            - `area`: Total area under the plume.
     """
+    if background is None:
+        background = concentration.copy(deep=True)
+        for plume_id, sub_df in plumes.groupby('plume_id'):
+            background.loc[sub_df.index.min():sub_df.index.max()] = np.nan
+        background = background.interpolate(method='linear')
+    concentration = concentration - background
+
     areas = []
-    for row in plumes.itertuples():
+    for plume_id, sub_df in plumes.groupby('plume_id'):
+        start = sub_df.index.min()
+        end = sub_df.index.max()
         this_df = pd.DataFrame(
             [
                 {
-                    "start": row.start,
-                    "end": row.end,
-                    "area": np.trapz(concentration.loc[row.start : row.end], dx=dx),
+                    "plume_id": plume_id,
+                    "start": start,
+                    "end": end,
+                    "area": np.trapezoid(concentration.loc[start:end], dx=dx),
                 }
             ]
         )
@@ -218,6 +246,7 @@ def plot_background(
     Returns:
         None, plots a figure as a side-effect.
     """
+    warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter(date_fmt)
     ax.xaxis.set_major_formatter(myFmt)
@@ -269,8 +298,8 @@ def plot_plumes(
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
     ax.plot(concentration, color="gray", alpha=bg_alpha)
-    for row in plumes.itertuples():
-        ax.plot(concentration.loc[row.start : row.end])
+    for plume_id, sub_df in plumes.groupby('plume_id'):
+        ax.plot(sub_df['concentration'])
     plt.show()
 
 def max_wavelet_level(concentration: pd.Series):
@@ -290,7 +319,7 @@ def max_wavelet_level(concentration: pd.Series):
     return pywt.dwt_max_level(len(concentration), 'haar')
 
 def detect_plumes_wavelets(concentration: pd.Series,
-                           levels: Optional[list[int]] = None,
+                           levels: int,
                            plume_threshold: float =1,
                            plume_starting: float =0.5,
                            plume_buffer: float = 10,
@@ -319,8 +348,8 @@ def detect_plumes_wavelets(concentration: pd.Series,
     Args:
         - concentration (pd.Series): Concentration time-series, must have a 
             Datetime index.
-        - levels (list[int]): Which levels of the decomposition to use when
-            reconstructing the peaks
+        - levels (int): How many levels of the decomposition to use when
+            reconstructing the peaks.
         - plume_threshold (float): The threshold determine whether a signal is a
             plume.
         - plume_starting (float): The threshold from where plumes are determined
@@ -334,37 +363,39 @@ def detect_plumes_wavelets(concentration: pd.Series,
             parameter settings.
 
     Returns:
-        A pd.DataFrame where each row corresponds to a unique plume, whose
-        time boundaries are contained in the 2 columns: `start` and `end`.
+        A pd.DataFrame where each row corresponds to a timepoint within a plume
+        with 3 columns:
+          - plume_id: Integer ID identifying the plume this measurement came from
+          - concentration: Raw concentration at this timepoint
+          - reconstruction: Concentration with the background removed
     """
     # Interpolate missing values - can mess with Wavelets
     if interpolate:
         concentration = concentration.interpolate()
     coefs = pywt.wavedec(concentration, 'haar')
     max_level = max_wavelet_level(concentration)
-    # Wrap levels in list if provided single int
-    if type(levels) is int:
-        levels = [levels]
-    if any(max_level < l < 1 for l in levels):
-        raise ValueError("Levels must be between 1 and a maximum level, determined by `max_wavelet_level`")
+
+    if levels > max_level or levels <= 0:
+        raise ValueError(f"levels must be between 1 and {max_level} (determined by `max_wavelet_level`)")
 
     # Set unselected levels to zero
     # NB since only ever want the detail and not the approximation (index 0).
     # This has the handy bonus effect of meaning we don't need to explicitly
     # convert between 1-index (User-interface) and 0-index (how they are stored)
-    if levels is not None:
-        coefs_selected = [np.zeros_like(x) if i not in levels else x for i, x in enumerate(coefs)]
+    coefs_to_keep = list(range(max_level - (levels - 1), (max_level + 1)))
+    coefs_selected = [np.zeros_like(x) if i not in coefs_to_keep else x for i, x in enumerate(coefs)]
 
     recon = abs(pywt.waverec(coefs_selected, 'haar'))
 
     if plot:
-        plt.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
-        plt.plot(recon, label=f"Reconstructed signal using levels {','.join((str(x) for x in levels))}")
-        plt.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
+        fig, ax = plt.subplots()
+        ax.plot((concentration - concentration.mean()).reset_index(drop=True), label=f"Normalised raw signal", alpha=0.5)
+        ax.plot(recon, label=f"Reconstructed signal using {levels} levels")
+        ax.hlines(plume_threshold, xmin=0, xmax=len(recon), colors='C2',
                    label="plume_threshold")
-        plt.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',
+        ax.hlines(plume_starting, xmin=0, xmax=len(recon), colors='C3',
                    label="plume_starting")
-        plt.legend()
+        ax.legend()
         plt.show()
 
     # Ensure the 2 signals are the same length - not guaranteed!
@@ -419,4 +450,14 @@ def detect_plumes_wavelets(concentration: pd.Series,
     plumes_condensed = pd.DataFrame(
         [{"start": x.left, "end": x.right} for x in plume_overlap]
     ).sort_values(["start"])
-    return plumes_condensed
+
+    # Join back into time-series and extract concentration
+    output = []
+    plumes_condensed['plume_id'] = range(1, plumes_condensed.shape[0]+1)
+    for row in plumes_condensed.itertuples():
+        sub_df = df.loc[row.start : row.end].copy(deep=True)
+        sub_df['plume_id'] = row.plume_id
+        output.append(sub_df)
+    output = pd.concat(output)
+
+    return output[['plume_id', 'concentration']]

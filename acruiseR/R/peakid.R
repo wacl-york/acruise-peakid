@@ -186,9 +186,18 @@ detect_plumes <- function(concentration,
 
 #' Integrate the Area Under a Plume (aup) using a trapezoidal method.
 #'
+#' NB: the background must be removed to ensure the calculated area only relates
+#' to the plume of interest. The background can be explicitly provided to the
+#' `background` argument in the case when it has been generated separately (i.e. by
+#' `identify_background`). If it is not provided then it is linearly interpolated during
+#' the plume duration.
+#'
 #' @inheritParams detect_plumes
 #' @param plumes A Data Frame with 'start' and 'end' columns
 #' containing plume boundaries, as returned by `detect_plumes`.
+#' @param background A vector of background concentrations, as can be
+#' obtained by `identify_background`. These are subtracted from the concentrations.
+#' If not provided, a linear interpolation over the plume duration is used.
 #' @param dx Sampling period, passed onto the dz argument of
 #' np.trapz. I.e. the time between consecutive measurements.
 #' @param uncertainty Instrument uncertainty as a decimal (i.e. 5% is 0.05).
@@ -201,7 +210,8 @@ detect_plumes <- function(concentration,
 #' contains the integrated area.
 #' @import data.table
 #' @export
-integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty = NULL,
+integrate_aup_trapz <- function(concentration, time, plumes, background=NULL,
+                                dx = 1, uncertainty = NULL,
                                 uncertainty_type = c("absolute", "relative")) {
     uncertainty_type <- match.arg(uncertainty_type)
     # Ensure both time columns are in the same format. Could stick with both in POSIX
@@ -214,8 +224,21 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty
     plumes_dt <- data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
 
-    areas <- dt[plumes_dt, on = c("time >= start", "time <= end")][, .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration), concentration), by = list(time, time.1, plume_id)]
+    # Subtract background if provided, else interpolate it
+    dt_comb <- plumes_dt[dt, on = c("start <= time", "end >= time"), .(start=x.start, end=x.end, time=i.time, plume_id, concentration)]
+    if (!is.null(background)) {
+        dt_comb[, bg := background]
+    } else {
+        dt_comb[, bg := ifelse(is.na(plume_id), concentration, NA)]
+        dt_comb[, bg := forecast::na.interp(bg)]
+    }
 
+    # Subtract background and calculat area
+    dt_comb[, concentration := concentration - bg]
+    areas <- dt_comb[!is.na(plume_id), .(area = pracma::trapz(seq(length.out = .N, by = dx), concentration), concentration), by = list(start, end, plume_id)]
+
+    # NB: areas here has 1 row per timepoint within a plume, as this is needed for the uncertainty calculation
+    # If not running uncertainty it will get reduced down to 1 row per plume with the area in the else statement
     if (!is.null(uncertainty)) {
         h2_2 <- (dx / 2)**2
         if (uncertainty_type == "relative") {
@@ -224,11 +247,12 @@ integrate_aup_trapz <- function(concentration, time, plumes, dx = 1, uncertainty
             areas[, delta := h2_2 * (uncertainty)**2]
         }
         # For each consecutive point within a plume, take the Sqrt of the sum of each point's uncertainty
-        areas <- areas[, .(area = mean(area, na.rm = T), uncertainty = sum(sqrt(delta + lag(delta)), na.rm = T)), by = .(time, time.1, plume_id)]
+        areas <- areas[, .(area = mean(area, na.rm = T), uncertainty = sum(sqrt(delta + lag(delta)), na.rm = T)), by = .(start, end, plume_id)]
+    } else {
+        areas <- unique(areas, by=c("start", "end", "plume_id", "area"))[, .(start, end, plume_id, area)]
     }
 
     areas[, plume_id := NULL]
-    setnames(areas, c("time", "time.1"), c("start", "end"))
     setcolorder(areas, c("start", "end", "area"))
     areas
 }

@@ -1,10 +1,10 @@
 # acruisepy 
 
-### Installation
+## Installation
 
 To install the Python package, run `pip install git+https://github.com/wacl-york/acruise-peakid#subdirectory=acruisepy`.
 
-### Usage
+## Usage
 
 Below shows an example of loading some CO2 data into Pandas for use with `acruisepy` and subsetting it to a period of interest.
 The first column in the CSV is a datetime, which has been set to to the DataFrame's index **NB: a datetime index must be used**.
@@ -15,11 +15,11 @@ import pandas as pd
 from acruisepy import peakid
 
 df_co2 = pd.read_csv(
-    "C258_FGGA_FAAM.txt",
+    "../data/C258_FGGA_FAAM.txt",
     names=["conc", "a", "b"],
     parse_dates=True,
     header=1,
-    date_parser=lambda x: datetime.datetime.strptime(x, "%d/%m/%Y %H:%M:%S.%f"),
+    date_format="%d/%m/%Y %H:%M:%S.%f"
 )
 start_time = datetime.datetime(2021, 10, 4, 9, 40, 0)
 end_time = datetime.datetime(2021, 10, 4, 13, 30, 0)
@@ -48,26 +48,26 @@ peakid.max_wavelet_level(df_co2['conc'])
 17
 ```
 
-The 17 levels correspond to different frequency bands of the original signal, with level 0 being the lowest frequency and 17 the highest.
+The 17 levels correspond to different frequency bands of the original signal, with level 1 being the lowest frequency and 17 the highest.
 We want a high-pass filter that only reconstructs the high-frequency plumes and is flat during the background.
 
-At a first attempt, try using just level 17.
+At a first attempt, try using just 1 level.
 By using argument `plot=True`, the reconstructed time-series will be plotted alongside the (normalised) raw signal and the horizontal lines that will be later used to demarcate plumes.
 This first attempt finds several plumes, although certainly not all of them or enough to use by itself, but none of the low-frequency baseline has been picked up.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                              levels = [17],
+                              levels = 1,
                               plot=True)
 ```
 ![Wavelet peak detection using the lowest level](../images/plumes_wavelets_1.png)
 
-For a reference point try using all levels 1-17.
+For a reference point try using all 17 levels.
 Be careful, as in the example below this will fail if there are missing values in the data.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = list(range(1, 18)),
+                             levels = 17,
                              plot=True)
 ```
 ![Wavelet peak detection using all levels](../images/plumes_wavelets_2.png)
@@ -78,50 +78,74 @@ However, this isn't helpful for plume detection as it's effectively the same as 
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = list(range(1, 18)),
+                             levels = 17,
                              interpolate=True,
                              plot=True)
 ```
 ![Wavelet peak detection using all levels and interpolating missing data](../images/plumes_wavelets_3.png)
 
-For another comparison point, try a different higher-level coefficient; here 14 is plotted.
-This finds subtly different peaks to just using 17, giving us the clue to how to extract the plumes: combining a subset of high-detailed levels.
-
-```python
-peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = [14],
-                             plot=True)
-```
-![Wavelet peak detection using level 14](../images/plumes_wavelets_4.png)
-
-Using levels 13-17 has identified all the peaks without letting in too much of the background noise, it thus is a suitable place from which to extract the plumes.
+Using 5 levels has identified all the peaks without letting in too much of the background noise, it thus is a suitable place from which to extract the plumes.
 These are simply thresholded in the same manner as in the regular `detect_plumes`, with 2 thresholds detailing 1) what should be considered a plume and b) where plumes should be considered to start from.
 
 ```python
 peakid.detect_plumes_wavelets(df_co2['conc'],
-                             levels = [13, 14, 15, 16, 17],
+                             levels = 5,
                              plot=True)
 ```
 
-![Wavelet peak detection using levels 13-17](../images/plumes_wavelets_5.png)
+![Wavelet peak detection using 5 levels](../images/plumes_wavelets_4.png)
 
-Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot using the regular function.
+Setting these to 2 and 1.2 respectively for this wavelet configuration allows us to save the plumes and plot them using `plot_plumes`.
+**NB: don't forget to set `plume_buffer` if there are nearby peaks that should be considered part of the same plume.**
+If 2 plumes are this many seconds apart or less they will be combined.
 
 ```python
 plumes_wave = peakid.detect_plumes_wavelets(df_co2['conc'],
-                                            levels = [13, 14, 15, 16, 17],
+                                            levels = 5,
                                             plume_threshold=2,
                                             plume_starting=1.2,
+                                            plume_buffer=5,
                                             plot=False)
 peakid.plot_plumes(df_co2['conc'], plumes_wave)
 ```
 
-![Final plumes detected by the wavelets](../images/plumes_wavelets_6.png)
+![Final plumes detected by the wavelets](../images/plumes_wavelets_5.png)
+
+### Determining peak areas
+
+The plume total concentrations are estimated by calculating the area under the curve, having removed the background.
+This calculation is achieved using the trapezoidal rule (see `numpy.trapezoid` for further details) and is implemented in `integrate_aup_trapz`.
+This function returns a DataFrame with 1 row per plume and a column `area` containing the plume area.
+By default the background is linearly interpolated within a plume, although a Series can be provided to the `background` argument if the background has been explicitly estimated. 
+This is useful in cases where there is a strong time-varying component to the background, although for most applications the plume duration will be very short compared to the background frequency so the linear interpolation is sufficient.
+
+```python
+co2_areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes_wave, dx=0.1)
+co2_areas
+```
+
+```
+   plume_id                   start                     end       area              
+0         1 2021-10-04 09:52:56.700 2021-10-04 09:53:00.700    8.05630              
+0         2 2021-10-04 09:57:34.000 2021-10-04 09:57:35.200    1.65705              
+0         3 2021-10-04 10:01:55.200 2021-10-04 10:02:01.500   16.23085              
+0         4 2021-10-04 10:05:14.900 2021-10-04 10:05:16.100    1.09915              
+0         5 2021-10-04 10:11:53.600 2021-10-04 10:11:57.300    8.17825              
+0         6 2021-10-04 10:20:05.500 2021-10-04 10:20:06.600    4.81380              
+0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:50.800   26.07085              
+0         8 2021-10-04 10:32:17.900 2021-10-04 10:32:18.300    0.50540              
+0         9 2021-10-04 10:32:25.600 2021-10-04 10:32:41.500   18.98325 
+...
+```
+
+By default, the background is estimated by a linear interpolation of the concentration time-series after removing the plumes.
+However, a Series can be provided with the background to be removed if this is available.
+This is useful in situations where the linear interpolation isn't appropriate, e.g. when there is a time-varying background.
 
 ### Original method
 
-NB: this method is no longer recommended and is just mentioned here for posterity.
-It is slower than the wavelet approach, contains more parameters to tune, and being a 2-step process is more involved.
+**NB: this method is no longer recommended and is just mentioned here for posterity.**
+It is slower than the wavelet approach, contains more parameters to tune, and has 2 steps rather than 1.
 
 The first step is to identify the background level, against which plumes will be compared.
 The `peakid.identify_background` function takes in the concentration and several tuning parameters, here the default values are used but it is highly likely you will need to tune them for your dataset. 
@@ -155,23 +179,23 @@ peakid.plot_plumes(df_co2['conc'], plumes)
 
 Once the plumes have been finalised, the area under the plumes can be calculated.
 This is currently done using a trapezoidal approach, see the documentation for `numpy.trapz` for further details.
-It's important to subtract the background from the concentration time-series for this function.
+**NB: provide the previously estimated background, otherwise it will be estimated by a linear interpolation within plumes**
 
 ```python
-co2_areas = peakid.integrate_aup_trapz(df_co2['conc'] - bg, plumes, dx=0.1)
-co2_areas
+areas = peakid.integrate_aup_trapz(df_co2['conc'], plumes, background=bg, dx=0.1)
+areas
 ```
 
 ```
-                    start                     end        area
-0 2021-10-04 09:52:56.700 2021-10-04 09:52:58.200   11.551411
-0 2021-10-04 09:57:34.900 2021-10-04 09:57:35.200    2.463899
-0 2021-10-04 10:01:56.200 2021-10-04 10:01:59.500   18.605635
-0 2021-10-04 10:05:13.700 2021-10-04 10:05:15.200    4.229698
-0 2021-10-04 10:11:53.900 2021-10-04 10:11:57.200    7.469866
-0 2021-10-04 10:20:06.100 2021-10-04 10:20:06.700    6.102518
-0 2021-10-04 10:31:23.300 2021-10-04 10:31:23.500    0.650395
-0 2021-10-04 10:31:31.800 2021-10-04 10:31:50.900   47.789589
+   plume_id                   start                     end        area
+0         1 2021-10-04 09:52:56.700 2021-10-04 09:52:58.200   11.551411
+0         2 2021-10-04 09:57:34.900 2021-10-04 09:57:35.200    2.463899
+0         3 2021-10-04 10:01:56.200 2021-10-04 10:01:59.500   18.605635
+0         4 2021-10-04 10:05:13.700 2021-10-04 10:05:15.200    4.229698
+0         5 2021-10-04 10:11:53.900 2021-10-04 10:11:57.200    7.469866
+0         6 2021-10-04 10:20:06.100 2021-10-04 10:20:06.700    6.102518
+0         7 2021-10-04 10:31:23.300 2021-10-04 10:31:23.500    0.650395
+0         8 2021-10-04 10:31:31.800 2021-10-04 10:31:50.900   47.789589
+0         9 2021-10-04 10:32:17.800 2021-10-04 10:32:18.400    1.644525
 ...
 ```
-
