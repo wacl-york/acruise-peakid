@@ -202,9 +202,12 @@ detect_plumes <- function(concentration,
 #' If not provided, a linear interpolation over the plume duration is used.
 #' @param dx Sampling period, passed onto the dz argument of
 #' np.trapz. I.e. the time between consecutive measurements.
-#' @param uncertainty Instrument uncertainty as a decimal (i.e. 5% is 0.05).
+#' @param uncertainty Instrument uncertainty.
 #' If provided then corresponding uncertainty estimates are also provided, if
-#' `NULL` then these are omitted.
+#' `NULL` then these are omitted. See `uncertainty_type` for further details.
+#' @param uncertainty_type Whether the value provided in `uncertainty` is absolute
+#' (with units the same as the measurement units), or relative, where uncertainties
+#' are expressed as a double (i.e. 5% is 0.05).
 #'
 #' @return A Data Frame with one row per plume and 3 columns `start`, `end`, and
 #' `area`, and an additional `uncertainty` column if the `uncertainty` parameter is
