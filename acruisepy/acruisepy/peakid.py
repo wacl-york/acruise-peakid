@@ -101,11 +101,12 @@ def detect_plumes(
     df.index.rename("index", inplace=True)
 
     # Derive useful values for identifying plumes
+    residual_sd = (df["concentration"] - df["background"]).std()
     df["is_plume"] = df["concentration"] > (
-        df["background"] + plume_sd_threshold * df["background"].std()
+        df["background"] + plume_sd_threshold * residual_sd
     )
     df["is_plume_starting"] = df["concentration"] > (
-        df["background"] + plume_sd_starting * df["background"].std()
+        df["background"] + plume_sd_starting * residual_sd
     )
     df["plume_group_starting"] = (
         df["is_plume_starting"] != df["is_plume_starting"].shift()
@@ -247,6 +248,7 @@ def plot_background(
         None, plots a figure as a side-effect.
     """
     warn('The rolling window method is deprecated in favour of the wavelet detection. Please refer to the README.', DeprecationWarning, stacklevel=2)
+    sd_residual = (concentration - background).std()
     fig, ax = plt.subplots()
     myFmt = mdates.DateFormatter(date_fmt)
     ax.xaxis.set_major_formatter(myFmt)
@@ -255,12 +257,12 @@ def plot_background(
     ax.plot(concentration, color="gray", alpha=bg_alpha)
     ax.plot(background, color="red", label="Mean background")
     ax.plot(
-        background + plume_sd_threshold * background.std(),
+        background + plume_sd_threshold * sd_residual,
         color="orange",
         label="Plume threshold",
     )
     ax.plot(
-        background + plume_sd_starting * background.std(),
+        background + plume_sd_starting * sd_residual,
         color="steelblue",
         label="Plume starting point",
     )
