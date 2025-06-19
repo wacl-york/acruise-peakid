@@ -26,8 +26,9 @@ Must have the same length as \code{concentration}.}
 \item{plumes}{A Data Frame with 'start' and 'end' columns
 containing plume boundaries, as returned by \code{detect_plumes}.}
 
-\item{background}{The smoothed background time-series object, as can be
-obtained from \code{identify_background}}
+\item{background}{A vector of background concentrations, as can be
+obtained by \code{identify_background}. These are subtracted from the concentrations.
+If not provided, a linear interpolation over the plume duration is used.}
 
 \item{ylabel}{y-axis label}
 

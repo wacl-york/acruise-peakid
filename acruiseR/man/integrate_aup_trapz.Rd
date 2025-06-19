@@ -8,6 +8,7 @@ integrate_aup_trapz(
   concentration,
   time,
   plumes,
+  background = NULL,
   dx = 1,
   uncertainty = NULL,
   uncertainty_type = c("absolute", "relative")
@@ -22,12 +23,20 @@ Must have the same length as \code{concentration}.}
 \item{plumes}{A Data Frame with 'start' and 'end' columns
 containing plume boundaries, as returned by \code{detect_plumes}.}
 
+\item{background}{A vector of background concentrations, as can be
+obtained by \code{identify_background}. These are subtracted from the concentrations.
+If not provided, a linear interpolation over the plume duration is used.}
+
 \item{dx}{Sampling period, passed onto the dz argument of
 np.trapz. I.e. the time between consecutive measurements.}
 
-\item{uncertainty}{Instrument uncertainty as a decimal (i.e. 5\% is 0.05).
+\item{uncertainty}{Instrument uncertainty.
 If provided then corresponding uncertainty estimates are also provided, if
-\code{NULL} then these are omitted.}
+\code{NULL} then these are omitted. See \code{uncertainty_type} for further details.}
+
+\item{uncertainty_type}{Whether the value provided in \code{uncertainty} is absolute
+(with units the same as the measurement units), or relative, where uncertainties
+are expressed as a double (i.e. 5\% is 0.05).}
 }
 \value{
 A Data Frame with one row per plume and 3 columns \code{start}, \code{end}, and
@@ -36,5 +45,9 @@ not \code{NULL}. The first 2 columns are the same as in the input \code{plumes},
 contains the integrated area.
 }
 \description{
-Integrate the Area Under a Plume (aup) using a trapezoidal method.
+NB: the background must be removed to ensure the calculated area only relates
+to the plume of interest. The background can be explicitly provided to the
+\code{background} argument in the case when it has been generated separately (i.e. by
+\code{identify_background}). If it is not provided then it is linearly interpolated during
+the plume duration.
 }
