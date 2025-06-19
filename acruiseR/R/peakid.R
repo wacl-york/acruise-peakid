@@ -140,9 +140,11 @@ detect_plumes <- function(concentration,
     }
 
     # Find overlapping plumes within the buffer period
+    plume_with_buffer <- plume_groups_dt[, .(start, end = end + nanotime::nanoduration(hours = 0, minutes = 0, seconds = plume_buffer, nanoseconds = 0))]
     setkey(plume_groups_dt, start, end)
+    setkey(plume_with_buffer, start, end)
     overlaps <- foverlaps(plume_groups_dt,
-        plume_groups_dt[, .(start, end = end + nanotime::nanoduration(hours = 0, minutes = 0, seconds = plume_buffer, nanoseconds = 0))],
+        plume_with_buffer,
         type = "any",
         which = TRUE
     )
