@@ -1,5 +1,6 @@
 test_that("Works with arguments 10, 5, 5", {
     bg <- identify_background(df_sim$conc,
+        method="rolling",
         bg_sd_window = 100,
         bg_sd_threshold = 1,
         bg_mean_window = 600
@@ -32,9 +33,10 @@ test_that("Works with arguments 10, 5, 5", {
                                                                       dx=0.1)")
     reticulate::py_run_string("areas_py.reset_index(drop=True, inplace=True)")
     # To compare datetimes need to explicitly parse Python as int64 from nanotime package
-    output_py_parsed <- reticulate::py$areas_py
-    output_py_parsed$start <- nanotime::as.nanotime(output_py_parsed$start)
-    output_py_parsed$end <- nanotime::as.nanotime(output_py_parsed$end)
+    output_py_parsed <- as.data.table(reticulate::py$areas_py)
+    output_py_parsed[, start := nanotime::as.nanotime(output_py_parsed$start) ]
+    output_py_parsed[, end := nanotime::as.nanotime(output_py_parsed$end) ]
+    output_py_parsed[, plume_id := NULL ]
     expect_equal(nrow(areas_r), nrow(output_py_parsed))
     expect_equal(areas_r, output_py_parsed, ignore_attr = TRUE)
 })
@@ -44,6 +46,7 @@ test_that("Works with nanotime", {
     additions <- seq(nrow(df_sim))
     time_nano <- start + nanotime::nanoduration(hours = 0, minutes = 0, seconds = 0, nanoseconds = additions * 1e8)
     bg <- identify_background(df_sim$conc,
+        method="rolling",
         bg_sd_window = 100,
         bg_sd_threshold = 1,
         bg_mean_window = 600
@@ -79,9 +82,10 @@ test_that("Works with nanotime", {
                                                                       dx=0.1)")
     reticulate::py_run_string("areas_py.reset_index(drop=True, inplace=True)")
     # To compare datetimes need to explicitly parse Python as int64 from nanotime package
-    output_py_parsed <- reticulate::py$areas_py
-    output_py_parsed$start <- nanotime::as.nanotime(output_py_parsed$start)
-    output_py_parsed$end <- nanotime::as.nanotime(output_py_parsed$end)
+    output_py_parsed <- as.data.table(reticulate::py$areas_py)
+    output_py_parsed[, start := nanotime::as.nanotime(output_py_parsed$start)]
+    output_py_parsed[, end := nanotime::as.nanotime(output_py_parsed$end)]
+    output_py_parsed[, plume_id := NULL ]
     expect_equal(nrow(areas_r), nrow(output_py_parsed))
     expect_equal(areas_r, output_py_parsed, ignore_attr = TRUE)
 })
