@@ -2,8 +2,7 @@ Package: acruiseR
 Title: Identifies Peaks from ACRUISE Measurements
 Version: 0.1.0
 Authors@R: 
-    person("Stuart", "Lacy", , "stuart.lacy@york.ac.uk", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person("Stuart", "Lacy", , "stuart.lacy@york.ac.uk", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file ../LICENSE
 Encoding: UTF-8
@@ -13,6 +12,7 @@ Imports:
     data.table,
     forecast,
     ggplot2,
+    lubridate,
     mgcv,
     nanotime,
     pracma,
