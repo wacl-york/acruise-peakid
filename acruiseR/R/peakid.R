@@ -71,7 +71,7 @@ identify_background <- function(concentration,
         output[is_bg] <- concentration[is_bg]
         # If want to interpolate everything, so including the NAs introduced by the
         # rolling functions then use rule=2
-        output[!is_bg] <- approx(output, xout = which(!is_bg), rule = 1)$y
+        output[!is_bg] <- stats::approx(output, xout = which(!is_bg), rule = 1)$y
         bg_out <- RcppRoll::roll_mean(output, n = bg_mean_window, align = "right", fill = NA)
     } else if (method == "gam") {
         # Interpolate missing values, unlike the first method that uses LastOneCarryForward
@@ -122,12 +122,15 @@ detect_plumes <- function(concentration,
                           plume_sd_starting = 2,
                           plume_buffer = 10,
                           refit = FALSE) {
+  
+  . = is_plume_starting = is_plume = plume_group_starting = has_plume = NULL # due to NSE notes in R CMD check
+  start = end = xid = yid = combined_plume = x_prev_seen = y_prev_seen = in_plume = NULL
     # Convert into nanotime (64-bit int) if in POSIX (32-bit double)
     time <- posix_to_nanotime(time)
 
     # First pass at identifying plumes
     bg <- background$bg
-    residual_sd <- sd(concentration - bg, na.rm = T)
+    residual_sd <- stats::sd(concentration - bg, na.rm = T)
     dt <- data.table::data.table(time = time, concentration = concentration, background = bg)
     setorder(dt, time)
     dt[, is_plume_starting := !is.na(concentration) & !is.na(background) & concentration > (background + plume_sd_starting * residual_sd)]
@@ -136,7 +139,7 @@ detect_plumes <- function(concentration,
 
     plume_groups_dt <- dt[is_plume_starting == TRUE, list("has_plume" = sum(is_plume), start = min(time), end = max(time)), by = plume_group_starting][has_plume > 0]
     if (nrow(plume_groups_dt) == 0) {
-        return(data.table(start=nanotime(), end=nanotime()))
+        return(data.table(start=nanotime::nanotime(), end=nanotime::nanotime()))
     }
 
     # Find overlapping plumes within the buffer period
@@ -218,6 +221,8 @@ detect_plumes <- function(concentration,
 integrate_aup_trapz <- function(concentration, time, plumes, background=NULL,
                                 dx = 1, uncertainty = NULL,
                                 uncertainty_type = c("absolute", "relative")) {
+  . = plume_id = x.start = x.end = i.time = bg = start = end = delta = area = lag = NULL # due to NSE notes in R CMD check
+  
     uncertainty_type <- match.arg(uncertainty_type)
     # Ensure both time columns are in the same format. Could stick with both in POSIX
     # but might as we use nanotime
@@ -285,11 +290,13 @@ plot_background <- function(concentration,
                             xlabel = "Time (UTC)",
                             date_fmt = "%H:%M",
                             bg_alpha = 0.5) {
+  bg_starting = bg = bg_threshold = variable = value = NULL
+  
     .Deprecated("plot_plumes")
     background <- background$bg
     time <- nanotime_to_posix(time) # Can't plot nanotime
     dt <- data.table(concentration = concentration, time = time, bg = background)
-    sd_residual <- sd(concentration - background, na.rm = T)
+    sd_residual <- stats::sd(concentration - background, na.rm = T)
     dt[, bg_starting := bg + plume_sd_starting * sd_residual]
     dt[, bg_threshold := bg + plume_sd_threshold * sd_residual]
     dt <- melt(dt, id.vars = "time")
@@ -324,11 +331,14 @@ plot_plumes <- function(concentration,
                         plume_sd_threshold = 3,
                         plume_sd_starting = 2,
                         bg_alpha = 0.5) {
+  
+  . = plume_id = is_plume = bg_starting = bg_threshold = NULL
+  
     dt <- data.table(concentration = concentration, time = time)
 
     # Create empty plumes if not provided, just makes plotting easier
     if (is.null(plumes)) {
-        plumes <- data.table(start = nanotime(), end = nanotime())
+        plumes <- data.table(start = nanotime::nanotime(), end = nanotime::nanotime())
     }
     plumes_dt <- as.data.table(plumes)
     plumes_dt[, plume_id := 1:nrow(plumes_dt)]
@@ -341,7 +351,7 @@ plot_plumes <- function(concentration,
 
     if (!is.null(background)) {
         bg <- background$bg
-        sd_residual <- sd(concentration - bg, na.rm = T)
+        sd_residual <- stats::sd(concentration - bg, na.rm = T)
         dt[, c('bg', 'bg_starting', 'bg_threshold') := list(bg,
                                                          bg + plume_sd_starting * sd_residual,
                                                          bg + plume_sd_threshold * sd_residual
@@ -381,16 +391,16 @@ plot_plumes <- function(concentration,
                                           y = concentration)) +
         ggplot2::geom_line(ggplot2::aes(colour = plume_id, alpha=is_plume), na.rm=TRUE) +
         ggplot2::labs(x = xlabel, y = ylabel) +
-        ggplot2::scale_x_datetime("", date_labels = date_fmt, timezone = tz(dt$time)) +
+        ggplot2::scale_x_datetime("", date_labels = date_fmt, timezone = lubridate::tz(dt$time)) +
         ggplot2::guides(colour = "none", alpha = "none") +
         ggplot2::scale_colour_manual("", values = colours) +
         ggplot2::scale_alpha_manual("", values = alphas) +
         ggplot2::theme_minimal()
 
     if (!is.null(background)) {
-        p <- p + ggplot2::geom_line(aes(y=bg), colour="red", na.rm=TRUE) +
-                 ggplot2::geom_line(aes(y=bg_starting), colour="steelblue", na.rm=TRUE) +
-                 ggplot2::geom_line(aes(y=bg_threshold), colour="orange", na.rm=TRUE)
+        p <- p + ggplot2::geom_line(ggplot2::aes(y=bg), colour="red", na.rm=TRUE) +
+                 ggplot2::geom_line(ggplot2::aes(y=bg_starting), colour="steelblue", na.rm=TRUE) +
+                 ggplot2::geom_line(ggplot2::aes(y=bg_threshold), colour="orange", na.rm=TRUE)
     }
     p
 }
